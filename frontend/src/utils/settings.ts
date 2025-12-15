@@ -110,9 +110,9 @@ export const getGeneralSecretFields = (): GeneralSecretFieldConfig[] => [
   },
   {
     key: 'claude_code_oauth_token',
-    label: 'Claude Code Auth Token',
+    label: 'Claude Code OAuth Token',
     description: 'Authentication token for Claude Code integration',
-    placeholder: 'Enter your Claude Code auth token',
+    placeholder: 'Enter your Claude Code oauth token',
     helperText: {
       prefix: 'Run',
       code: 'claude setup-token',
