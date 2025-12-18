@@ -100,10 +100,12 @@ export const ModelSelector = memo(function ModelSelector({
       getItemLabel={(model) => model.name}
       onSelect={(model) => onModelChange(model.model_id)}
       leftIcon={Bot}
-      width="w-40"
+      width="w-48"
       dropdownPosition={dropdownPosition}
       disabled={disabled}
       compactOnMobile
+      searchable
+      searchPlaceholder="Search models..."
       renderItem={(model, isSelected) => (
         <span
           className={`truncate text-xs font-medium text-text-primary ${isSelected ? 'dark:text-text-dark-primary' : 'dark:text-text-dark-secondary'}`}

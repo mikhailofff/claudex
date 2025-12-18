@@ -1,7 +1,8 @@
-import { memo, ReactNode } from 'react';
-import { ChevronDown, LucideIcon } from 'lucide-react';
+import { memo, ReactNode, useState, useEffect, KeyboardEvent } from 'react';
+import { ChevronDown, LucideIcon, Search, X } from 'lucide-react';
 import { useDropdown } from '@/hooks/useDropdown';
 import { Button, SelectItem } from '@/components/ui';
+import { fuzzySearch } from '@/utils/fuzzySearch';
 
 export type DropdownItemType<T> = { type: 'item'; data: T } | { type: 'header'; label: string };
 
@@ -19,6 +20,8 @@ export interface DropdownProps<T> {
   dropdownPosition?: 'top' | 'bottom';
   disabled?: boolean;
   compactOnMobile?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }
 
 const isGroupedItems = <T,>(
@@ -43,8 +46,75 @@ function DropdownInner<T>({
   dropdownPosition = 'bottom',
   disabled = false,
   compactOnMobile = false,
+  searchable = false,
+  searchPlaceholder = 'Search...',
 }: DropdownProps<T>) {
   const { isOpen, dropdownRef, setIsOpen } = useDropdown();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+    }
+  }, [isOpen]);
+
+  const filterItems = (itemsToFilter: readonly T[]): T[] => {
+    if (!searchQuery.trim()) return [...itemsToFilter];
+    return fuzzySearch(searchQuery, [...itemsToFilter], {
+      keys: ['name', 'label'],
+      limit: 50,
+    });
+  };
+
+  const getFilteredGroupedItems = (): DropdownItemType<T>[] => {
+    if (!isGroupedItems(items)) return [];
+    if (!searchQuery.trim()) return [...items];
+
+    const result: DropdownItemType<T>[] = [];
+    let currentHeader: string | null = null;
+    const pendingItems: T[] = [];
+
+    for (const item of items) {
+      if (item.type === 'header') {
+        if (pendingItems.length > 0 && currentHeader) {
+          const filtered = filterItems(pendingItems);
+          if (filtered.length > 0) {
+            result.push({ type: 'header', label: currentHeader });
+            filtered.forEach((data) => result.push({ type: 'item', data }));
+          }
+        }
+        currentHeader = item.label;
+        pendingItems.length = 0;
+      } else {
+        pendingItems.push(item.data);
+      }
+    }
+
+    if (pendingItems.length > 0 && currentHeader) {
+      const filtered = filterItems(pendingItems);
+      if (filtered.length > 0) {
+        result.push({ type: 'header', label: currentHeader });
+        filtered.forEach((data) => result.push({ type: 'item', data }));
+      }
+    }
+
+    return result;
+  };
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (searchQuery) {
+        setSearchQuery('');
+      } else {
+        setIsOpen(false);
+      }
+    }
+  };
+
+  const displayItems = isGroupedItems(items)
+    ? getFilteredGroupedItems()
+    : filterItems(items as readonly T[]);
 
   const showIconOnly = compactOnMobile && LeftIcon;
   const labelClasses = showIconOnly
@@ -78,9 +148,34 @@ function DropdownInner<T>({
         <div
           className={`absolute left-0 ${width} z-[60] rounded-2xl border border-border/50 bg-surface/95 shadow-2xl shadow-black/10 backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-surface-dark/95 dark:shadow-black/40 ${dropdownPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}`}
         >
-          <div className="space-y-1 p-2">
+          {searchable && (
+            <div className="border-b border-border/30 p-2 dark:border-white/5">
+              <div className="relative flex items-center">
+                <Search className="pointer-events-none absolute left-2 h-3 w-3 text-text-quaternary dark:text-text-dark-quaternary" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder={searchPlaceholder}
+                  autoFocus
+                  className="h-7 w-full rounded-md border border-border bg-surface-secondary py-1 pl-7 pr-7 text-xs text-text-primary placeholder:text-text-quaternary focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-border-dark dark:bg-surface-dark-secondary dark:text-text-dark-primary dark:placeholder:text-text-dark-quaternary dark:focus:ring-brand-400"
+                />
+                {searchQuery && (
+                  <Button
+                    onClick={() => setSearchQuery('')}
+                    variant="unstyled"
+                    className="absolute right-1 rounded bg-transparent p-1 text-text-quaternary transition-colors hover:bg-surface hover:text-text-primary dark:hover:bg-surface-dark dark:hover:text-text-dark-primary"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="max-h-64 space-y-1 overflow-y-auto p-2">
             {isGroupedItems(items)
-              ? items.map((item, index) => {
+              ? (displayItems as DropdownItemType<T>[]).map((item, index) => {
                   if (item.type === 'header') {
                     return (
                       <div
@@ -119,7 +214,7 @@ function DropdownInner<T>({
                     </SelectItem>
                   );
                 })
-              : items.map((item) => {
+              : (displayItems as T[]).map((item) => {
                   const isSelected = getItemKey(item) === getItemKey(value);
                   return (
                     <SelectItem
