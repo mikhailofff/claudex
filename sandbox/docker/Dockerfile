@@ -32,7 +32,9 @@ RUN apt-get update && apt-get install -y \
     && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://get.docker.com | sh
+RUN curl -fsSL https://get.docker.com | sh && \
+    mkdir -p /etc/docker && \
+    echo '{"storage-driver": "vfs"}' > /etc/docker/daemon.json
 
 RUN useradd -m -s /bin/bash -u 1000 user && \
     echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
