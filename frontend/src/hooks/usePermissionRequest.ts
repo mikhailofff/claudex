@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { permissionService } from '@/services/permissionService';
 import { usePermissionStore, useUIStore } from '@/store';
+import { addResolvedRequestId, isRequestResolved } from '@/utils/permissionStorage';
 import type { PermissionRequest } from '@/types';
 
 type ApiError = Error & { status?: number };
@@ -22,6 +23,7 @@ export function usePermissionRequest(chatId: string | undefined) {
   const handlePermissionRequest = useCallback(
     (request: PermissionRequest) => {
       if (!chatId) return;
+      if (isRequestResolved(request.request_id)) return;
       setPermissionRequest(chatId, request);
     },
     [chatId, setPermissionRequest],
@@ -35,12 +37,14 @@ export function usePermissionRequest(chatId: string | undefined) {
     setIsLoading(true);
     try {
       await permissionService.respondToPermission(chatId, pendingRequest.request_id, true);
+      addResolvedRequestId(pendingRequest.request_id);
       clearPermissionRequest(chatId);
       if (pendingRequest.tool_name === 'ExitPlanMode') {
         setPermissionMode('auto');
       }
     } catch (error) {
       if (isExpiredRequestError(error)) {
+        addResolvedRequestId(pendingRequest.request_id);
         clearPermissionRequest(chatId);
       }
     } finally {
@@ -62,9 +66,11 @@ export function usePermissionRequest(chatId: string | undefined) {
           false,
           alternativeInstruction,
         );
+        addResolvedRequestId(pendingRequest.request_id);
         clearPermissionRequest(chatId);
       } catch (error) {
         if (isExpiredRequestError(error)) {
+          addResolvedRequestId(pendingRequest.request_id);
           clearPermissionRequest(chatId);
         }
       } finally {

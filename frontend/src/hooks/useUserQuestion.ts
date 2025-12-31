@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { permissionService } from '@/services/permissionService';
 import { usePermissionStore } from '@/store';
+import { addResolvedRequestId } from '@/utils/permissionStorage';
 
 export function useUserQuestion(chatId: string | undefined) {
   const [isLoading, setIsLoading] = useState(false);
@@ -19,9 +20,11 @@ export function useUserQuestion(chatId: string | undefined) {
       setError(null);
       try {
         await permissionService.respondWithAnswers(chatId, pendingRequest.request_id, answers);
+        addResolvedRequestId(pendingRequest.request_id);
         clearPermissionRequest(chatId);
       } catch (err) {
         if ((err as Error & { status?: number })?.status === 404) {
+          addResolvedRequestId(pendingRequest.request_id);
           clearPermissionRequest(chatId);
         } else {
           setError('Failed to submit answers. Please try again.');
@@ -40,9 +43,11 @@ export function useUserQuestion(chatId: string | undefined) {
     setError(null);
     try {
       await permissionService.respondToPermission(chatId, pendingRequest.request_id, false);
+      addResolvedRequestId(pendingRequest.request_id);
       clearPermissionRequest(chatId);
     } catch (err) {
       if ((err as Error & { status?: number })?.status === 404) {
+        addResolvedRequestId(pendingRequest.request_id);
         clearPermissionRequest(chatId);
       } else {
         setError('Failed to cancel. Please try again.');
