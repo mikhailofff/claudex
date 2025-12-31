@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, memo, useMemo } from 'react';
+import { useRef, useState, useCallback, useEffect, useLayoutEffect, memo, useMemo } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { findLastBotMessageIndex } from '@/utils/message';
 import { Message } from '@/components/chat/message-bubble/Message';
@@ -96,6 +96,15 @@ export const Chat = memo(function Chat({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const loadMoreTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasScrolledToBottom = useRef(false);
+  const prevScrollHeight = useRef<number>(0);
+  const isNearBottomRef = useRef(true);
+
+  useEffect(() => {
+    hasScrolledToBottom.current = false;
+    prevScrollHeight.current = 0;
+    isNearBottomRef.current = true;
+  }, [chatId]);
 
   const { ref: loadMoreRef, inView } = useInView();
 
@@ -107,6 +116,9 @@ export const Chat = memo(function Chat({
 
       loadMoreTimeoutRef.current = setTimeout(() => {
         if (!isFetchingNextPage) {
+          if (chatWindowRef.current) {
+            prevScrollHeight.current = chatWindowRef.current.scrollHeight;
+          }
           fetchNextPage();
         }
       }, 100);
@@ -118,6 +130,35 @@ export const Chat = memo(function Chat({
       }
     };
   }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  useLayoutEffect(() => {
+    const container = chatWindowRef.current;
+    if (container && prevScrollHeight.current > 0 && !isInitialLoading) {
+      const scrollDiff = container.scrollHeight - prevScrollHeight.current;
+      if (scrollDiff > 0) {
+        container.scrollTop += scrollDiff;
+      }
+      prevScrollHeight.current = 0;
+    }
+  }, [messages.length, isInitialLoading]);
+
+  useLayoutEffect(() => {
+    const container = chatWindowRef.current;
+    if (container && !isInitialLoading && messages.length > 0 && !hasScrolledToBottom.current) {
+      if (messages[0]?.chat_id !== chatId) return;
+      container.scrollTo({ top: container.scrollHeight, behavior: 'instant' });
+      hasScrolledToBottom.current = true;
+    }
+  }, [chatId, isInitialLoading, messages]);
+
+  useEffect(() => {
+    if (isStreaming && isNearBottomRef.current && chatWindowRef.current) {
+      chatWindowRef.current.scrollTo({
+        top: chatWindowRef.current.scrollHeight,
+        behavior: 'instant',
+      });
+    }
+  }, [isStreaming, messages]);
 
   const scrollToBottom = useCallback(() => {
     const container = chatWindowRef.current;
@@ -147,6 +188,7 @@ export const Chat = memo(function Chat({
     if (!container) return;
 
     const isAtBottom = checkIfNearBottom();
+    isNearBottomRef.current = isAtBottom;
     const shouldShow = !isAtBottom;
 
     setShowScrollButton((prev) => {
@@ -196,6 +238,16 @@ export const Chat = memo(function Chat({
             <ChatSkeleton messageCount={3} className="py-4" />
           ) : (
             <div className="w-full lg:mx-auto lg:max-w-3xl">
+              {hasNextPage && (
+                <div ref={loadMoreRef} className="flex h-4 items-center justify-center p-4">
+                  {isFetchingNextPage && (
+                    <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-text-dark-secondary">
+                      <Spinner size="xs" />
+                      Loading older messages...
+                    </div>
+                  )}
+                </div>
+              )}
               {messages.map((msg, index) => {
                 const messageIsStreaming = streamingMessageIds.includes(msg.id);
                 const isLastBotMessage = msg.is_bot && index === lastBotMessageIndex;
@@ -218,16 +270,6 @@ export const Chat = memo(function Chat({
                   />
                 );
               })}
-              {hasNextPage && (
-                <div ref={loadMoreRef} className="flex h-4 items-center justify-center p-4">
-                  {isFetchingNextPage && (
-                    <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-text-dark-secondary">
-                      <Spinner size="xs" />
-                      Loading more messages...
-                    </div>
-                  )}
-                </div>
-              )}
               {error && <ErrorMessage error={error} onDismiss={onDismissError} />}
             </div>
           )}
