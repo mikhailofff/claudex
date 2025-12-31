@@ -100,6 +100,12 @@ export const Chat = memo(function Chat({
   const prevScrollHeight = useRef<number>(0);
   const isNearBottomRef = useRef(true);
 
+  useEffect(() => {
+    hasScrolledToBottom.current = false;
+    prevScrollHeight.current = 0;
+    isNearBottomRef.current = true;
+  }, [chatId]);
+
   const { ref: loadMoreRef, inView } = useInView();
 
   useEffect(() => {
