@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.constants import (
     REDIS_KEY_CHAT_CONTEXT_USAGE,
+    REDIS_KEY_CHAT_CONTEXT_USAGE_LOCK,
     REDIS_KEY_CHAT_REVOKED,
     REDIS_KEY_CHAT_TASK,
 )
@@ -134,37 +135,47 @@ async def _poll_context_usage_while_streaming(
     try:
         redis_client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
-        async with get_celery_session() as (session_factory, _):
-            async with session_factory() as db:
-                result = await db.execute(
-                    select(Chat).filter(
-                        Chat.id == uuid.UUID(chat_id),
-                        Chat.user_id == uuid.UUID(user_id),
+        lock_key = REDIS_KEY_CHAT_CONTEXT_USAGE_LOCK.format(chat_id=chat_id)
+        acquired = await redis_client.set(lock_key, "1", nx=True, ex=300)
+        if not acquired:
+            logger.debug("Context usage poller already running for chat %s", chat_id)
+            await redis_client.close()
+            return
+
+        try:
+            async with get_celery_session() as (session_factory, _):
+                async with session_factory() as db:
+                    result = await db.execute(
+                        select(Chat).filter(
+                            Chat.id == uuid.UUID(chat_id),
+                            Chat.user_id == uuid.UUID(user_id),
+                        )
                     )
-                )
-                chat = result.scalar_one_or_none()
-                if not chat:
-                    logger.warning(
-                        "Chat %s not found or not owned by user %s", chat_id, user_id
+                    chat = result.scalar_one_or_none()
+                    if not chat:
+                        logger.warning(
+                            "Chat %s not found or not owned by user %s", chat_id, user_id
+                        )
+                        return
+
+                while True:
+                    await fetch_and_broadcast_context_usage(
+                        chat_id=chat_id,
+                        session_id=session_id,
+                        sandbox_id=sandbox_id,
+                        sandbox_provider=sandbox_provider,
+                        user_id=user_id,
+                        model_id=model_id,
+                        redis_client=redis_client,
+                        session_factory=session_factory,
                     )
-                    return
 
-            while True:
-                await fetch_and_broadcast_context_usage(
-                    chat_id=chat_id,
-                    session_id=session_id,
-                    sandbox_id=sandbox_id,
-                    sandbox_provider=sandbox_provider,
-                    user_id=user_id,
-                    model_id=model_id,
-                    redis_client=redis_client,
-                    session_factory=session_factory,
-                )
+                    if not await _is_stream_active(chat_id, redis_client):
+                        break
 
-                if not await _is_stream_active(chat_id, redis_client):
-                    break
-
-                await asyncio.sleep(settings.CONTEXT_USAGE_POLL_INTERVAL_SECONDS)
+                    await asyncio.sleep(settings.CONTEXT_USAGE_POLL_INTERVAL_SECONDS)
+        finally:
+            await redis_client.delete(lock_key)
 
     except Exception as e:
         logger.error("Context usage polling failed for chat %s: %s", chat_id, e)

@@ -120,6 +120,15 @@ class BaseSandboxTransport(Transport, ABC):
         pass
 
     async def close(self) -> None:
+        # Send EOF first while connection is still ready, so CLI exits gracefully
+        if self._is_connection_ready():
+            await self.end_input()
+            if self._monitor_task:
+                try:
+                    await asyncio.wait_for(asyncio.shield(self._monitor_task), timeout=0.5)
+                except asyncio.TimeoutError:
+                    pass
+
         self._ready = False
         await self._cancel_task(self._monitor_task)
         self._monitor_task = None
