@@ -120,6 +120,8 @@ class BaseSandboxTransport(Transport, ABC):
         pass
 
     async def close(self) -> None:
+        if self._ready:
+            await self.end_input()
         self._ready = False
         await self._cancel_task(self._monitor_task)
         self._monitor_task = None

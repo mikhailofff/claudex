@@ -129,6 +129,9 @@ class DockerSandboxTransport(BaseSandboxTransport):
 
     def _send_signal_to_pid(self, pid: int, signal: str) -> None:
         try:
+            self._container.exec_run(
+                ["/bin/kill", f"-{signal}", f"-{pid}"], user="root"
+            )
             self._container.exec_run(["/bin/kill", f"-{signal}", str(pid)], user="root")
         except Exception:
             pass
