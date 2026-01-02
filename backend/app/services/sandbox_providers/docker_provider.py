@@ -617,6 +617,90 @@ class LocalDockerProvider(SandboxProvider):
             return None
         return f"{self.config.preview_base_url}:{host_port}/?folder=/home/user"
 
+    def _create_container_from_image(self, sandbox_id: str, image: Any) -> Any:
+        client = self._get_docker_client()
+        labels = self._build_traefik_labels(sandbox_id)
+        network = self.config.traefik_network or self.config.network
+
+        container = client.containers.run(
+            image,
+            command="/bin/bash",
+            name=f"claudex-sandbox-{sandbox_id}",
+            hostname="sandbox",
+            user="user",
+            working_dir=self.config.user_home,
+            stdin_open=True,
+            tty=True,
+            detach=True,
+            remove=False,
+            privileged=True,
+            security_opt=["no-new-privileges=false"],
+            network=network,
+            labels=labels,
+            ports={
+                **{f"{port}/tcp": None for port in DOCKER_AVAILABLE_PORTS},
+                f"{self.config.openvscode_port}/tcp": None,
+            },
+            environment={
+                "TERM": "xterm-256color",
+                "HOME": self.config.user_home,
+                "USER": "user",
+            },
+        )
+        return container
+
+    async def clone_sandbox(
+        self, source_sandbox_id: str, checkpoint_id: str | None = None
+    ) -> str:
+        loop = asyncio.get_running_loop()
+        source_container = await self._get_container(source_sandbox_id)
+
+        temp_image = await loop.run_in_executor(
+            self._executor, source_container.commit
+        )
+
+        new_sandbox_id = str(uuid.uuid4())[:12]
+        new_container: Any = None
+
+        try:
+            new_container = await loop.run_in_executor(
+                self._executor,
+                lambda: self._create_container_from_image(new_sandbox_id, temp_image),
+            )
+            self._containers[new_sandbox_id] = new_container
+
+            port_map = await loop.run_in_executor(
+                self._executor, lambda: self._extract_port_mappings(new_container)
+            )
+            self._port_mappings[new_sandbox_id] = port_map
+
+            if checkpoint_id:
+                await self.restore_checkpoint(new_sandbox_id, checkpoint_id)
+
+            await self._start_ide_server(new_sandbox_id)
+
+            return new_sandbox_id
+        except Exception:
+            if new_sandbox_id in self._containers:
+                del self._containers[new_sandbox_id]
+            if new_sandbox_id in self._port_mappings:
+                del self._port_mappings[new_sandbox_id]
+            if new_container is not None:
+                try:
+                    await loop.run_in_executor(
+                        self._executor, lambda: new_container.remove(force=True)
+                    )
+                except Exception:
+                    pass
+            raise
+        finally:
+            try:
+                await loop.run_in_executor(
+                    self._executor, lambda: temp_image.remove(force=True)
+                )
+            except Exception:
+                pass
+
     async def cleanup(self) -> None:
         await super().cleanup()
         self._executor.shutdown(wait=False)

@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.models.db_models import (
     Chat,
     Message,
+    MessageAttachment,
     MessageRole,
     MessageStreamStatus,
     ModelProvider,
@@ -36,6 +37,7 @@ from app.services.claude_agent import ClaudeAgentService
 from app.services.exceptions import ChatException, ErrorCode
 from app.services.message import MessageService
 from app.services.sandbox import SandboxService
+from app.services.sandbox_providers import create_sandbox_provider, SandboxProviderType
 from app.services.storage import StorageService
 from app.services.user import UserService
 from app.tasks.chat_processor import process_chat
@@ -506,6 +508,118 @@ class ChatService(BaseDbService[Chat]):
             )
             await db.execute(update_stmt)
             await db.commit()
+
+    async def fork_chat(
+        self, source_chat_id: UUID, message_id: UUID, user: User
+    ) -> tuple[Chat, int]:
+        source_chat = await self.get_chat(source_chat_id, user)
+
+        # Only Docker sandboxes support forking
+        if source_chat.sandbox_provider != SandboxProviderType.DOCKER.value:
+            raise ChatException(
+                "Fork is only supported for Docker sandboxes",
+                error_code=ErrorCode.VALIDATION_ERROR,
+                status_code=400,
+            )
+
+        if not source_chat.sandbox_id:
+            raise ChatException(
+                "Source chat has no sandbox",
+                error_code=ErrorCode.VALIDATION_ERROR,
+                status_code=400,
+            )
+
+        messages = await self.message_service.get_messages_up_to(
+            source_chat_id, message_id
+        )
+        if not messages:
+            raise ChatException(
+                "No messages to fork",
+                error_code=ErrorCode.VALIDATION_ERROR,
+                status_code=400,
+            )
+
+        target_message = messages[-1]
+
+        user_settings = cast(
+            UserSettings, await self.user_service.get_user_settings(user.id)
+        )
+
+        # Use Docker provider for fork (E2B not supported)
+        provider = create_sandbox_provider(SandboxProviderType.DOCKER)
+        fork_sandbox_service = SandboxService(provider)
+
+        try:
+            new_sandbox_id = await fork_sandbox_service.clone_sandbox(
+                source_chat.sandbox_id,
+                checkpoint_id=target_message.checkpoint_id,
+            )
+
+            try:
+                await fork_sandbox_service.initialize_sandbox(
+                    sandbox_id=new_sandbox_id,
+                    github_token=user_settings.github_personal_access_token,
+                    openrouter_api_key=user_settings.openrouter_api_key,
+                    custom_env_vars=user_settings.custom_env_vars,
+                    custom_skills=user_settings.custom_skills,
+                    custom_slash_commands=user_settings.custom_slash_commands,
+                    custom_agents=user_settings.custom_agents,
+                    user_id=str(user.id),
+                    auto_compact_disabled=user_settings.auto_compact_disabled,
+                    codex_auth_json=user_settings.codex_auth_json,
+                )
+
+                async with self.session_factory() as db:
+                    new_chat = Chat(
+                        title=self._truncate_title(f"Fork of {source_chat.title}"),
+                        user_id=user.id,
+                        sandbox_id=new_sandbox_id,
+                        sandbox_provider=SandboxProviderType.DOCKER.value,
+                        session_id=target_message.session_id,
+                    )
+                    db.add(new_chat)
+                    await db.flush()
+
+                    for msg in messages:
+                        new_message = Message(
+                            chat_id=new_chat.id,
+                            content=msg.content,
+                            role=msg.role,
+                            model_id=msg.model_id,
+                            session_id=msg.session_id,
+                            checkpoint_id=msg.checkpoint_id,
+                            stream_status=msg.stream_status,
+                            total_cost_usd=msg.total_cost_usd,
+                        )
+                        db.add(new_message)
+                        await db.flush()
+
+                        for att in msg.attachments:
+                            new_attachment = MessageAttachment(
+                                message_id=new_message.id,
+                                file_url="",
+                                file_path=att.file_path,
+                                file_type=att.file_type,
+                                filename=att.filename,
+                            )
+                            db.add(new_attachment)
+                            await db.flush()
+                            settings = get_settings()
+                            new_attachment.file_url = f"{settings.BASE_URL}/api/v1/attachments/{new_attachment.id}/preview"
+
+                    await db.commit()
+                    await db.refresh(new_chat)
+
+                return (new_chat, len(messages))
+
+            except Exception:
+                try:
+                    await fork_sandbox_service.destroy_sandbox(new_sandbox_id)
+                except Exception:
+                    pass
+                raise
+        finally:
+            await provider.cleanup()
 
     async def _verify_chat_access(self, chat_id: UUID, user_id: UUID) -> bool:
         async with self.session_factory() as db:

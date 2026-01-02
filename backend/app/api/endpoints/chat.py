@@ -36,13 +36,15 @@ from app.models.schemas import (
     CursorPaginatedMessages,
     CursorPaginationParams,
     EnhancePromptResponse,
+    ForkChatRequest,
+    ForkChatResponse,
     PaginatedChats,
     PaginationParams,
     PermissionRespondResponse,
     RestoreRequest,
 )
 from app.services.chat import ChatService
-from app.services.exceptions import ChatException, ClaudeAgentException
+from app.services.exceptions import ChatException, ClaudeAgentException, MessageException, SandboxException
 from app.services.permission_manager import PermissionManager
 from app.utils.redis import redis_connection, redis_pubsub
 from app.models.schemas.errors import HTTPErrorResponse
@@ -465,6 +467,44 @@ async def restore_chat(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database error while restoring chat",
+        )
+
+
+@router.post(
+    "/chats/{chat_id}/fork",
+    response_model=ForkChatResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"model": HTTPErrorResponse, "description": "Bad request"},
+        401: {"model": HTTPErrorResponse, "description": "Unauthorized"},
+        404: {"model": HTTPErrorResponse, "description": "Chat or message not found"},
+        500: {"model": HTTPErrorResponse, "description": "Internal server error"},
+    },
+)
+async def fork_chat(
+    chat_id: UUID,
+    request: ForkChatRequest,
+    current_user: User = Depends(get_current_user),
+    chat_service: ChatService = Depends(get_chat_service),
+) -> ForkChatResponse:
+    try:
+        new_chat, messages_copied = await chat_service.fork_chat(
+            chat_id, request.message_id, current_user
+        )
+        return ForkChatResponse(chat=new_chat, messages_copied=messages_copied)
+    except (ChatException, MessageException, SandboxException) as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except SQLAlchemyError as e:
+        logger.error("Database error forking chat %s: %s", chat_id, e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error while forking chat",
+        )
+    except FileNotFoundError as e:
+        logger.error("Checkpoint not found forking chat %s: %s", chat_id, e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Checkpoint not found",
         )
 
 

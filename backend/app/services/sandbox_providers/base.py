@@ -156,6 +156,13 @@ class SandboxProvider(ABC):
     async def delete_sandbox(self, sandbox_id: str) -> None:
         pass
 
+    async def clone_sandbox(
+        self, source_sandbox_id: str, checkpoint_id: str | None = None
+    ) -> str:
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support sandbox cloning"
+        )
+
     @abstractmethod
     async def is_running(self, sandbox_id: str) -> bool:
         pass

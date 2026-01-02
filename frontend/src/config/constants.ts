@@ -1,5 +1,12 @@
 import type { CustomAgent } from '@/types/user.types';
 
+export const SandboxProvider = {
+  DOCKER: 'docker',
+  E2B: 'e2b',
+} as const;
+
+export type SandboxProviderType = (typeof SandboxProvider)[keyof typeof SandboxProvider];
+
 export const CONTEXT_WINDOW_TOKENS = 200_000;
 export const MAX_TASKS_LIMIT = 10;
 

@@ -15,6 +15,7 @@ import type {
   CustomCommand,
   CustomPrompt,
 } from '@/types';
+import type { SandboxProviderType } from '@/config/constants';
 import { useStreamStore } from '@/store';
 import { ChatProvider } from '@/contexts/ChatContext';
 
@@ -41,6 +42,7 @@ export interface ChatProps {
     contextWindow: number;
   };
   sandboxId?: string;
+  sandboxProvider?: SandboxProviderType;
   chatId?: string;
   onDismissError?: () => void;
   fetchNextPage?: () => void;
@@ -71,6 +73,7 @@ export const Chat = memo(function Chat({
   onModelChange,
   contextUsage,
   sandboxId,
+  sandboxProvider,
   chatId,
   onDismissError,
   fetchNextPage,
@@ -264,6 +267,7 @@ export const Chat = memo(function Chat({
     <ChatProvider
       chatId={chatId}
       sandboxId={sandboxId}
+      sandboxProvider={sandboxProvider}
       fileStructure={fileStructure}
       customAgents={customAgents}
       customSlashCommands={customSlashCommands}

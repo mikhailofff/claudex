@@ -1,13 +1,14 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { CheckCircle2, Copy, RotateCcw } from 'lucide-react';
+import { CheckCircle2, Copy, GitFork, RotateCcw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { MessageContent } from './MessageContent';
 import { UserAvatar, BotAvatar } from './MessageAvatars';
-import { useModelsQuery } from '@/hooks/queries';
+import { useModelsQuery, useForkChatMutation, useRestoreCheckpointMutation } from '@/hooks/queries';
 import type { MessageAttachment } from '@/types';
-import { useRestoreCheckpointMutation } from '@/hooks/queries';
 import { ConfirmDialog, LoadingOverlay, Button, Spinner, Badge } from '@/components/ui';
 import toast from 'react-hot-toast';
 import { useChatContext } from '@/hooks/useChatContext';
+import { SandboxProvider } from '@/config/constants';
 
 export interface MessageProps {
   id: string;
@@ -39,9 +40,11 @@ export const Message = memo(function Message({
   isLastBotMessageWithCommit,
   onRestoreSuccess,
 }: MessageProps) {
-  const { chatId, sandboxId } = useChatContext();
+  const { chatId, sandboxId, sandboxProvider } = useChatContext();
   const { data: models = [] } = useModelsQuery();
+  const navigate = useNavigate();
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isForking, setIsForking] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const restoreMutation = useRestoreCheckpointMutation({
@@ -58,6 +61,18 @@ export const Message = memo(function Message({
     },
   });
 
+  const forkMutation = useForkChatMutation({
+    onSuccess: (data) => {
+      setIsForking(false);
+      toast.success(`Chat forked with ${data.messages_copied} messages`);
+      navigate(`/chat/${data.chat.id}`);
+    },
+    onError: () => {
+      toast.error('Failed to fork chat. Please try again.');
+      setIsForking(false);
+    },
+  });
+
   const handleRestore = useCallback(() => {
     if (!chatId || isRestoring) return;
     setShowConfirmDialog(true);
@@ -68,6 +83,12 @@ export const Message = memo(function Message({
     setIsRestoring(true);
     restoreMutation.mutate({ chatId, messageId: id, sandboxId });
   }, [chatId, id, sandboxId, restoreMutation]);
+
+  const handleFork = useCallback(() => {
+    if (!chatId || isForking) return;
+    setIsForking(true);
+    forkMutation.mutate({ chatId, messageId: id });
+  }, [chatId, id, isForking, forkMutation]);
 
   const formattedDate = useMemo(
     () => (createdAt ? new Date(createdAt).toLocaleString() : ''),
@@ -153,33 +174,65 @@ export const Message = memo(function Message({
                 </Button>
 
                 {!isLastBotMessageWithCommit && (
-                  <Button
-                    onClick={handleRestore}
-                    disabled={isRestoring}
-                    variant="unstyled"
-                    className={`relative rounded-xl p-2.5 transition-all duration-200 sm:p-2 ${
-                      isThisMessageStreaming || isGloballyStreaming
-                        ? 'pointer-events-none opacity-0'
-                        : isRestoring
-                          ? 'cursor-not-allowed opacity-50'
-                          : 'text-text-secondary opacity-70 hover:bg-surface-secondary hover:text-text-primary hover:opacity-100 dark:text-text-dark-secondary dark:hover:bg-surface-dark-hover dark:hover:text-text-dark-primary'
-                    }`}
-                    title="Restore to this message"
-                  >
-                    <div className="relative z-10 flex items-center gap-1.5">
-                      {isRestoring ? (
-                        <>
-                          <Spinner size="md" />
-                          <span className="hidden text-xs sm:inline">Restoring...</span>
-                        </>
-                      ) : (
-                        <>
-                          <RotateCcw className="h-4 w-4" />
-                          <span className="hidden text-xs sm:inline">Restore</span>
-                        </>
-                      )}
-                    </div>
-                  </Button>
+                  <>
+                    <Button
+                      onClick={handleRestore}
+                      disabled={isRestoring}
+                      variant="unstyled"
+                      className={`relative rounded-xl p-2.5 transition-all duration-200 sm:p-2 ${
+                        isThisMessageStreaming || isGloballyStreaming
+                          ? 'pointer-events-none opacity-0'
+                          : isRestoring
+                            ? 'cursor-not-allowed opacity-50'
+                            : 'text-text-secondary opacity-70 hover:bg-surface-secondary hover:text-text-primary hover:opacity-100 dark:text-text-dark-secondary dark:hover:bg-surface-dark-hover dark:hover:text-text-dark-primary'
+                      }`}
+                      title="Restore to this message"
+                    >
+                      <div className="relative z-10 flex items-center gap-1.5">
+                        {isRestoring ? (
+                          <>
+                            <Spinner size="md" />
+                            <span className="hidden text-xs sm:inline">Restoring...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="h-4 w-4" />
+                            <span className="hidden text-xs sm:inline">Restore</span>
+                          </>
+                        )}
+                      </div>
+                    </Button>
+
+                    {sandboxProvider === SandboxProvider.DOCKER && sandboxId && (
+                      <Button
+                        onClick={handleFork}
+                        disabled={isForking}
+                        variant="unstyled"
+                        className={`relative rounded-xl p-2.5 transition-all duration-200 sm:p-2 ${
+                          isThisMessageStreaming || isGloballyStreaming
+                            ? 'pointer-events-none opacity-0'
+                            : isForking
+                              ? 'cursor-not-allowed opacity-50'
+                              : 'text-text-secondary opacity-70 hover:bg-surface-secondary hover:text-text-primary hover:opacity-100 dark:text-text-dark-secondary dark:hover:bg-surface-dark-hover dark:hover:text-text-dark-primary'
+                        }`}
+                        title="Fork chat from this message"
+                      >
+                        <div className="relative z-10 flex items-center gap-1.5">
+                          {isForking ? (
+                            <>
+                              <Spinner size="md" />
+                              <span className="hidden text-xs sm:inline">Forking...</span>
+                            </>
+                          ) : (
+                            <>
+                              <GitFork className="h-4 w-4" />
+                              <span className="hidden text-xs sm:inline">Fork</span>
+                            </>
+                          )}
+                        </div>
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -198,6 +251,7 @@ export const Message = memo(function Message({
       />
 
       <LoadingOverlay isOpen={isRestoring} message="Restoring checkpoint..." />
+      <LoadingOverlay isOpen={isForking} message="Forking chat..." />
     </div>
   );
 });

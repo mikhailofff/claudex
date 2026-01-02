@@ -12,6 +12,7 @@ import {
   PaginatedChats,
   PaginatedMessages,
   ContextUsage,
+  ForkChatResponse,
 } from '@/types';
 import { CONTEXT_WINDOW_TOKENS } from '@/config/constants';
 
@@ -185,6 +186,18 @@ async function restoreToCheckpoint(chatId: string, messageId: string): Promise<v
   });
 }
 
+async function forkChat(chatId: string, messageId: string): Promise<ForkChatResponse> {
+  validateId(chatId, 'Chat ID');
+  validateId(messageId, 'Message ID');
+
+  return serviceCall(async () => {
+    const response = await apiClient.post<ForkChatResponse>(`/chat/chats/${chatId}/fork`, {
+      message_id: messageId,
+    });
+    return ensureResponse(response, 'Failed to fork chat');
+  });
+}
+
 async function getContextUsage(chatId: string): Promise<ContextUsage> {
   validateId(chatId, 'Chat ID');
 
@@ -283,6 +296,7 @@ export const chatService = {
   deleteChat,
   deleteAllChats,
   restoreToCheckpoint,
+  forkChat,
   getContextUsage,
   enhancePrompt,
   pinChat,

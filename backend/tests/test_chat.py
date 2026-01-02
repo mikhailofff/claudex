@@ -5,8 +5,11 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
-from app.models.db_models import Chat, User
+from app.models.db_models import Chat, Message, MessageAttachment, User
+from app.models.db_models.enums import MessageRole, MessageStreamStatus
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.sandbox import SandboxService
+from app.core.security import get_password_hash
 from tests.conftest import STREAMING_TEST_TIMEOUT
 
 
@@ -658,4 +661,269 @@ class TestChatNotFound:
             headers=auth_headers,
         )
 
+        assert response.status_code == 400
+
+
+class TestForkChat:
+    async def test_fork_chat_success(
+        self,
+        docker_async_client: AsyncClient,
+        docker_integration_chat_fixture: tuple[User, Chat, SandboxService],
+        docker_auth_headers: dict[str, str],
+        db_session: AsyncSession,
+    ) -> None:
+        user, chat, sandbox_service = docker_integration_chat_fixture
+
+        test_file_path = "/home/user/fork_test.txt"
+        test_content = "Fork test content"
+        await sandbox_service.provider.write_file(
+            chat.sandbox_id, test_file_path, test_content
+        )
+
+        msg_with_attachment = Message(
+            id=uuid.uuid4(),
+            chat_id=chat.id,
+            content="First user message",
+            role=MessageRole.USER,
+            stream_status=MessageStreamStatus.COMPLETED,
+            model_id="claude-haiku-4-5",
+        )
+        messages = [
+            msg_with_attachment,
+            Message(
+                id=uuid.uuid4(),
+                chat_id=chat.id,
+                content="Assistant response",
+                role=MessageRole.ASSISTANT,
+                stream_status=MessageStreamStatus.COMPLETED,
+                model_id="claude-haiku-4-5",
+                total_cost_usd=0.001,
+            ),
+            Message(
+                id=uuid.uuid4(),
+                chat_id=chat.id,
+                content="Second user message - fork point",
+                role=MessageRole.USER,
+                stream_status=MessageStreamStatus.COMPLETED,
+            ),
+            Message(
+                id=uuid.uuid4(),
+                chat_id=chat.id,
+                content="Message after fork point - should be excluded",
+                role=MessageRole.ASSISTANT,
+                stream_status=MessageStreamStatus.COMPLETED,
+            ),
+        ]
+        for msg in messages:
+            db_session.add(msg)
+        await db_session.flush()
+
+        attachment = MessageAttachment(
+            message_id=msg_with_attachment.id,
+            file_url="",
+            file_path="/home/user/test.txt",
+            file_type="text/plain",
+            filename="test.txt",
+        )
+        db_session.add(attachment)
+        await db_session.flush()
+        attachment.file_url = f"/api/v1/attachments/{attachment.id}/preview"
+
+        fork_point_message = messages[2]
+        response = await docker_async_client.post(
+            f"/api/v1/chat/chats/{chat.id}/fork",
+            json={"message_id": str(fork_point_message.id)},
+            headers=docker_auth_headers,
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["messages_copied"] == 3
+        assert data["chat"]["title"].startswith("Fork of")
+        assert data["chat"]["sandbox_id"] != chat.sandbox_id
+        assert data["chat"]["sandbox_provider"] == "docker"
+        assert data["chat"]["user_id"] == str(user.id)
+
+        new_sandbox_id = data["chat"]["sandbox_id"]
+        file_content = await sandbox_service.provider.read_file(
+            new_sandbox_id, test_file_path
+        )
+        assert file_content.content == test_content
+
+        new_chat_id = data["chat"]["id"]
+        messages_response = await docker_async_client.get(
+            f"/api/v1/chat/chats/{new_chat_id}/messages",
+            headers=docker_auth_headers,
+        )
+        copied_messages = messages_response.json()["items"]
+
+        assert len(copied_messages) == 3
+        contents = [m["content"] for m in copied_messages]
+        assert "First user message" in contents
+        assert "Assistant response" in contents
+        assert "Second user message - fork point" in contents
+        assert "Message after fork point - should be excluded" not in contents
+
+        assistant_msg = next(m for m in copied_messages if m["role"] == "assistant")
+        assert assistant_msg["model_id"] == "claude-haiku-4-5"
+
+        first_msg = next(m for m in copied_messages if m["content"] == "First user message")
+        assert len(first_msg["attachments"]) == 1
+        assert first_msg["attachments"][0]["filename"] == "test.txt"
+        assert first_msg["attachments"][0]["file_url"] != attachment.file_url
+
+    async def test_fork_chat_not_found_and_access_errors(
+        self,
+        docker_async_client: AsyncClient,
+        docker_integration_chat_fixture: tuple[User, Chat, SandboxService],
+        docker_integration_user_fixture: User,
+        docker_auth_headers: dict[str, str],
+        db_session: AsyncSession,
+    ) -> None:
+        user, chat, _ = docker_integration_chat_fixture
+
+        response = await docker_async_client.post(
+            f"/api/v1/chat/chats/{chat.id}/fork",
+            json={"message_id": str(uuid.uuid4())},
+            headers=docker_auth_headers,
+        )
+        assert response.status_code == 404
+
+        response = await docker_async_client.post(
+            f"/api/v1/chat/chats/{uuid.uuid4()}/fork",
+            json={"message_id": str(uuid.uuid4())},
+            headers=docker_auth_headers,
+        )
+        assert response.status_code == 404
+
+        other_chat = Chat(
+            id=uuid.uuid4(),
+            title="Other chat",
+            user_id=docker_integration_user_fixture.id,
+            sandbox_id="other-sandbox",
+            sandbox_provider="docker",
+        )
+        db_session.add(other_chat)
+        await db_session.flush()
+
+        other_message = Message(
+            id=uuid.uuid4(),
+            chat_id=other_chat.id,
+            content="Message from other chat",
+            role=MessageRole.USER,
+            stream_status=MessageStreamStatus.COMPLETED,
+        )
+        db_session.add(other_message)
+        await db_session.flush()
+
+        response = await docker_async_client.post(
+            f"/api/v1/chat/chats/{chat.id}/fork",
+            json={"message_id": str(other_message.id)},
+            headers=docker_auth_headers,
+        )
+        assert response.status_code == 404
+
+        another_user = User(
+            id=uuid.uuid4(),
+            email=f"another_user_{uuid.uuid4().hex[:8]}@example.com",
+            username=f"another_user_{uuid.uuid4().hex[:8]}",
+            hashed_password=get_password_hash("testpassword"),
+            is_active=True,
+            is_verified=True,
+        )
+        db_session.add(another_user)
+        await db_session.flush()
+
+        another_users_chat = Chat(
+            id=uuid.uuid4(),
+            title="Another user's chat",
+            user_id=another_user.id,
+            sandbox_id="another-sandbox",
+            sandbox_provider="docker",
+        )
+        db_session.add(another_users_chat)
+        await db_session.flush()
+
+        another_users_message = Message(
+            id=uuid.uuid4(),
+            chat_id=another_users_chat.id,
+            content="Another user's message",
+            role=MessageRole.USER,
+            stream_status=MessageStreamStatus.COMPLETED,
+        )
+        db_session.add(another_users_message)
+        await db_session.flush()
+
+        response = await docker_async_client.post(
+            f"/api/v1/chat/chats/{another_users_chat.id}/fork",
+            json={"message_id": str(another_users_message.id)},
+            headers=docker_auth_headers,
+        )
+        assert response.status_code == 404
+
+    async def test_fork_chat_unauthorized(
+        self,
+        docker_async_client: AsyncClient,
+        docker_integration_chat_fixture: tuple[User, Chat, SandboxService],
+    ) -> None:
+        _, chat, _ = docker_integration_chat_fixture
+
+        response = await docker_async_client.post(
+            f"/api/v1/chat/chats/{chat.id}/fork",
+            json={"message_id": str(uuid.uuid4())},
+        )
+        assert response.status_code == 401
+
+    async def test_fork_chat_validation_errors(
+        self,
+        async_client: AsyncClient,
+        docker_async_client: AsyncClient,
+        integration_chat_fixture: tuple[User, Chat, SandboxService],
+        docker_integration_user_fixture: User,
+        auth_headers: dict[str, str],
+        docker_auth_headers: dict[str, str],
+        db_session: AsyncSession,
+    ) -> None:
+        _, e2b_chat, _ = integration_chat_fixture
+        e2b_message = Message(
+            id=uuid.uuid4(),
+            chat_id=e2b_chat.id,
+            content="E2B message",
+            role=MessageRole.USER,
+            stream_status=MessageStreamStatus.COMPLETED,
+        )
+        db_session.add(e2b_message)
+
+        no_sandbox_chat = Chat(
+            id=uuid.uuid4(),
+            title="Chat without sandbox",
+            user_id=docker_integration_user_fixture.id,
+            sandbox_id=None,
+            sandbox_provider="docker",
+        )
+        db_session.add(no_sandbox_chat)
+        await db_session.flush()
+
+        no_sandbox_message = Message(
+            id=uuid.uuid4(),
+            chat_id=no_sandbox_chat.id,
+            content="No sandbox message",
+            role=MessageRole.USER,
+            stream_status=MessageStreamStatus.COMPLETED,
+        )
+        db_session.add(no_sandbox_message)
+        await db_session.flush()
+
+        response = await async_client.post(
+            f"/api/v1/chat/chats/{e2b_chat.id}/fork",
+            json={"message_id": str(e2b_message.id)},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+        response = await docker_async_client.post(
+            f"/api/v1/chat/chats/{no_sandbox_chat.id}/fork",
+            json={"message_id": str(no_sandbox_message.id)},
+            headers=docker_auth_headers,
+        )
         assert response.status_code == 400

@@ -572,6 +572,11 @@ class SandboxService:
             for c in checkpoints
         ]
 
+    async def clone_sandbox(
+        self, source_sandbox_id: str, checkpoint_id: str | None = None
+    ) -> str:
+        return await self.provider.clone_sandbox(source_sandbox_id, checkpoint_id)
+
     async def _enqueue_pty_output(
         self, data: bytes, output_queue: "asyncio.Queue[str]"
     ) -> None:
