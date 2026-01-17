@@ -40,4 +40,11 @@ def create_sandbox_provider(
         config = docker_config or create_docker_config()
         return LocalDockerProvider(config=config)
 
+    if provider_type == SandboxProviderType.MODAL:
+        from app.services.sandbox_providers.modal_provider import ModalSandboxProvider
+
+        if not api_key:
+            raise SandboxException("Modal API key is required")
+        return ModalSandboxProvider(api_key=api_key)
+
     raise ValueError(f"Unknown provider type: {provider_type}")

@@ -10,6 +10,7 @@ from typing import Any
 
 from app.constants import (
     DOCKER_AVAILABLE_PORTS,
+    EXCLUDED_PREVIEW_PORTS,
     SANDBOX_DEFAULT_COMMAND_TIMEOUT,
     VNC_WEBSOCKET_PORT,
 )
@@ -76,7 +77,7 @@ class LocalDockerProvider(SandboxProvider):
             return {}
 
         labels: dict[str, str] = {"traefik.enable": "true"}
-        all_ports = [self.config.openvscode_port] + list(DOCKER_AVAILABLE_PORTS)
+        all_ports = list(DOCKER_AVAILABLE_PORTS)
 
         for port in all_ports:
             router_name = f"sandbox-{sandbox_id}-{port}"
@@ -111,10 +112,7 @@ class LocalDockerProvider(SandboxProvider):
             security_opt=["no-new-privileges=false"],
             network=network,
             labels=labels,
-            ports={
-                **{f"{port}/tcp": None for port in DOCKER_AVAILABLE_PORTS},
-                f"{self.config.openvscode_port}/tcp": None,
-            },
+            ports={f"{port}/tcp": None for port in DOCKER_AVAILABLE_PORTS},
             environment={
                 "TERM": "xterm-256color",
                 "HOME": self.config.user_home,
@@ -562,7 +560,7 @@ class LocalDockerProvider(SandboxProvider):
                 if self.config.sandbox_domain
                 else (lambda port: f"{self.config.preview_base_url}:{port_map[port]}")
             ),
-            excluded_ports={self.config.openvscode_port},
+            excluded_ports=EXCLUDED_PREVIEW_PORTS,
         )
 
     async def _find_container_by_name(self, sandbox_id: str) -> Any:
@@ -652,10 +650,7 @@ class LocalDockerProvider(SandboxProvider):
             security_opt=["no-new-privileges=false"],
             network=network,
             labels=labels,
-            ports={
-                **{f"{port}/tcp": None for port in DOCKER_AVAILABLE_PORTS},
-                f"{self.config.openvscode_port}/tcp": None,
-            },
+            ports={f"{port}/tcp": None for port in DOCKER_AVAILABLE_PORTS},
             environment={
                 "TERM": "xterm-256color",
                 "HOME": self.config.user_home,

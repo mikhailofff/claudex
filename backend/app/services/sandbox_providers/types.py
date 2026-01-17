@@ -6,6 +6,7 @@ from typing import Any, Callable, Coroutine
 class SandboxProviderType(str, Enum):
     E2B = "e2b"
     DOCKER = "docker"
+    MODAL = "modal"
 
 
 @dataclass

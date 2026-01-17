@@ -13,8 +13,10 @@ from tenacity import (
 )
 
 from app.constants import (
+    EXCLUDED_PREVIEW_PORTS,
     SANDBOX_AUTO_PAUSE_TIMEOUT,
     SANDBOX_DEFAULT_COMMAND_TIMEOUT,
+    SANDBOX_DEFAULT_TIMEOUT,
     SANDBOX_SYSTEM_VARIABLES,
 )
 from app.core.config import get_settings
@@ -33,8 +35,6 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-SANDBOX_DEFAULT_TIMEOUT = 3600
-EXCLUDED_PREVIEW_PORTS = {49982, 49983, 22, 4040, 3456, 8765}
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0
 

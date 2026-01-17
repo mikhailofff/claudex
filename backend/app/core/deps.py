@@ -100,6 +100,7 @@ async def get_sandbox_service(
     settings = get_settings()
     provider_type = SandboxProviderType(settings.SANDBOX_PROVIDER)
     e2b_api_key = None
+    modal_api_key = None
 
     if user:
         try:
@@ -108,12 +109,20 @@ async def get_sandbox_service(
                 provider_type = SandboxProviderType(user_settings.sandbox_provider)
             if user_settings.e2b_api_key:
                 e2b_api_key = user_settings.e2b_api_key
+            if user_settings.modal_api_key:
+                modal_api_key = user_settings.modal_api_key
         except UserException:
             pass
 
+    api_key = None
+    if provider_type == SandboxProviderType.E2B:
+        api_key = e2b_api_key
+    elif provider_type == SandboxProviderType.MODAL:
+        api_key = modal_api_key
+
     provider = create_sandbox_provider(
         provider_type=provider_type,
-        api_key=e2b_api_key,
+        api_key=api_key,
         docker_config=create_docker_config(),
     )
     try:
@@ -166,14 +175,20 @@ async def get_sandbox_service_for_context(
     try:
         user_settings = await user_service.get_user_settings(current_user.id, db=db)
         default_provider = user_settings.sandbox_provider
-        api_key = user_settings.e2b_api_key
+        e2b_api_key = user_settings.e2b_api_key
+        modal_api_key = user_settings.modal_api_key
     except UserException:
         default_provider = "docker"
-        api_key = None
+        e2b_api_key = None
+        modal_api_key = None
 
     provider_type = context.sandbox_provider or default_provider
-    if provider_type != SandboxProviderType.E2B.value:
-        api_key = None
+
+    api_key = None
+    if provider_type == SandboxProviderType.E2B.value:
+        api_key = e2b_api_key
+    elif provider_type == SandboxProviderType.MODAL.value:
+        api_key = modal_api_key
 
     provider = create_sandbox_provider(provider_type, api_key=api_key)
     try:

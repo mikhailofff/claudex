@@ -107,11 +107,19 @@ async def create_and_initialize_sandbox(
     session_factory: Any,
 ) -> tuple[SandboxService, str]:
     from app.services.sandbox import SandboxService
-    from app.services.sandbox_providers import create_sandbox_provider
+    from app.services.sandbox_providers import (
+        SandboxProviderType,
+        create_sandbox_provider,
+    )
 
+    api_key = None
+    if user_settings.sandbox_provider == SandboxProviderType.E2B.value:
+        api_key = user_settings.e2b_api_key
+    elif user_settings.sandbox_provider == SandboxProviderType.MODAL.value:
+        api_key = user_settings.modal_api_key
     provider = create_sandbox_provider(
         provider_type=user_settings.sandbox_provider,
-        api_key=user_settings.e2b_api_key,
+        api_key=api_key,
     )
     sandbox_service = SandboxService(provider, session_factory=session_factory)
     sandbox_id = await sandbox_service.create_sandbox()

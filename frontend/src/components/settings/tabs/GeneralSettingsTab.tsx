@@ -71,7 +71,7 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
       <div className="space-y-4">
         <div>
           <p className="mb-2 text-xs text-text-tertiary dark:text-text-dark-tertiary">
-            Select the sandbox environment for code execution. E2B requires an API key.
+            Select the sandbox environment for code execution. E2B and Modal require API keys.
           </p>
           <div className="flex gap-4">
             <label className="flex cursor-pointer items-center gap-2">
@@ -79,7 +79,7 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
                 type="radio"
                 name="sandbox_provider"
                 value="docker"
-                checked={settings.sandbox_provider !== 'e2b'}
+                checked={settings.sandbox_provider === 'docker'}
                 onChange={() => onSandboxProviderChange('docker')}
                 className="border-border-light text-accent-primary focus:ring-accent-primary h-4 w-4 dark:border-border-dark"
               />
@@ -101,6 +101,22 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
                 className={`text-sm ${settings.e2b_api_key ? 'text-text-primary dark:text-text-dark-primary' : 'text-text-tertiary dark:text-text-dark-tertiary'}`}
               >
                 E2B (Cloud)
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="sandbox_provider"
+                value="modal"
+                checked={settings.sandbox_provider === 'modal'}
+                onChange={() => onSandboxProviderChange('modal')}
+                disabled={!settings.modal_api_key}
+                className="border-border-light text-accent-primary focus:ring-accent-primary h-4 w-4 disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-dark"
+              />
+              <span
+                className={`text-sm ${settings.modal_api_key ? 'text-text-primary dark:text-text-dark-primary' : 'text-text-tertiary dark:text-text-dark-tertiary'}`}
+              >
+                Modal (Cloud)
               </span>
             </label>
           </div>

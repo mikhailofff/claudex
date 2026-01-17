@@ -21,7 +21,11 @@ from app.prompts.enhance_prompt import get_enhance_prompt
 from app.services.ai_model import AIModelService
 from app.services.exceptions import ClaudeAgentException
 from app.services.sandbox_providers import SandboxProviderType, create_docker_config
-from app.services.transports import DockerSandboxTransport, E2BSandboxTransport
+from app.services.transports import (
+    DockerSandboxTransport,
+    E2BSandboxTransport,
+    ModalSandboxTransport,
+)
 from app.utils.validators import APIKeyValidationError, validate_e2b_api_key
 from app.services.streaming.events import StreamEvent
 from app.services.streaming.processor import StreamProcessor
@@ -91,9 +95,9 @@ class ClaudeAgentService:
         self.tool_registry = ToolHandlerRegistry()
         self.session_factory = session_factory or SessionLocal
         self._total_cost_usd = 0.0
-        self._active_transport: E2BSandboxTransport | DockerSandboxTransport | None = (
-            None
-        )
+        self._active_transport: (
+            E2BSandboxTransport | DockerSandboxTransport | ModalSandboxTransport | None
+        ) = None
 
     async def __aenter__(self) -> Self:
         return self
@@ -123,12 +127,29 @@ class ClaudeAgentService:
         options: ClaudeAgentOptions,
         user_settings: UserSettings | None = None,
         e2b_api_key: str | None = None,
-    ) -> E2BSandboxTransport | DockerSandboxTransport:
+    ) -> E2BSandboxTransport | DockerSandboxTransport | ModalSandboxTransport:
         if sandbox_provider == SandboxProviderType.DOCKER or sandbox_provider is None:
             docker_config = create_docker_config()
             return DockerSandboxTransport(
                 sandbox_id=sandbox_id,
                 docker_config=docker_config,
+                prompt=prompt_iterable,
+                options=options,
+            )
+
+        if sandbox_provider == SandboxProviderType.MODAL.value:
+            modal_api_key = None
+            if user_settings is not None:
+                modal_api_key = user_settings.modal_api_key
+
+            if modal_api_key is None:
+                raise ClaudeAgentException(
+                    "Modal API key is required for Modal sandbox provider"
+                )
+
+            return ModalSandboxTransport(
+                sandbox_id=sandbox_id,
+                api_key=modal_api_key,
                 prompt=prompt_iterable,
                 options=options,
             )
@@ -258,7 +279,7 @@ class ClaudeAgentService:
 
     def get_active_transport(
         self,
-    ) -> E2BSandboxTransport | DockerSandboxTransport | None:
+    ) -> E2BSandboxTransport | DockerSandboxTransport | ModalSandboxTransport | None:
         return self._active_transport
 
     async def _build_auth_env(
@@ -317,7 +338,7 @@ class ClaudeAgentService:
 
         if settings.DOCKER_PERMISSION_API_URL:
             api_base_url = settings.DOCKER_PERMISSION_API_URL
-        elif sandbox_provider == "e2b":
+        elif sandbox_provider in ("e2b", "modal"):
             api_base_url = settings.BASE_URL.rstrip("/")
         else:
             base_url = settings.BASE_URL
@@ -593,6 +614,7 @@ class ClaudeAgentService:
                 sandbox_id=sandbox_id,
                 prompt_iterable=prompt_iterable,
                 options=options,
+                user_settings=user_settings,
                 e2b_api_key=user_settings.e2b_api_key,
             )
 

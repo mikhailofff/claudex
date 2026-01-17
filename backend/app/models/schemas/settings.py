@@ -89,7 +89,8 @@ class UserSettingsBase(BaseModel):
     z_ai_api_key: str | None = None
     openrouter_api_key: str | None = None
     e2b_api_key: str | None = None
-    sandbox_provider: Literal["docker", "e2b"] = "docker"
+    modal_api_key: str | None = None
+    sandbox_provider: Literal["docker", "e2b", "modal"] = "docker"
     codex_auth_json: str | None = None
     custom_instructions: str | None = Field(default=None, max_length=1500)
     custom_agents: list[CustomAgent] | None = None

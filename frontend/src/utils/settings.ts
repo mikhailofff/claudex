@@ -141,4 +141,15 @@ export const getGeneralSecretFields = (): GeneralSecretFieldConfig[] => [
       href: 'https://e2b.dev/dashboard',
     },
   },
+  {
+    key: 'modal_api_key',
+    label: 'Modal API Key',
+    description: 'Token ID and Secret for Modal (format: token_id:token_secret)',
+    placeholder: 'ak-xxx:as-xxx',
+    helperText: {
+      prefix: 'Create an API token at',
+      anchorText: 'Modal Settings',
+      href: 'https://modal.com/settings',
+    },
+  },
 ];

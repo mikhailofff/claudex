@@ -75,6 +75,7 @@ const createFallbackSettings = (): UserSettings => ({
   z_ai_api_key: null,
   openrouter_api_key: null,
   e2b_api_key: null,
+  modal_api_key: null,
   sandbox_provider: null,
   codex_auth_json: null,
   custom_instructions: null,
@@ -97,6 +98,7 @@ const TAB_FIELDS: Record<TabKey, (keyof UserSettings)[]> = {
     'z_ai_api_key',
     'openrouter_api_key',
     'e2b_api_key',
+    'modal_api_key',
     'sandbox_provider',
     'codex_auth_json',
     'auto_compact_disabled',
@@ -189,6 +191,7 @@ const SettingsPage: React.FC = () => {
         'z_ai_api_key',
         'openrouter_api_key',
         'e2b_api_key',
+        'modal_api_key',
         'sandbox_provider',
         'codex_auth_json',
         'custom_instructions',
@@ -325,6 +328,7 @@ const SettingsPage: React.FC = () => {
     z_ai_api_key: false,
     openrouter_api_key: false,
     e2b_api_key: false,
+    modal_api_key: false,
   });
 
   const hasUnsavedChanges = useMemo(() => {

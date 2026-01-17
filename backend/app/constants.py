@@ -20,6 +20,7 @@ QUEUE_MESSAGE_TTL_SECONDS: Final[int] = 3600
 
 SANDBOX_AUTO_PAUSE_TIMEOUT: Final[int] = 3000
 SANDBOX_DEFAULT_COMMAND_TIMEOUT: Final[int] = 120
+SANDBOX_DEFAULT_TIMEOUT: Final[int] = 3600
 LISTENING_PORTS_COMMAND: Final[str] = (
     "ss -tuln | grep LISTEN | awk '{print $5}' | sed 's/.*://g' | grep -E '^[0-9]+$' | sort -u"
 )
@@ -36,6 +37,7 @@ DOCKER_AVAILABLE_PORTS: Final[list[int]] = [
     6080,
     8000,
     8080,
+    8765,
     5173,
     4200,
     8888,
@@ -48,6 +50,20 @@ DOCKER_AVAILABLE_PORTS: Final[list[int]] = [
 
 VNC_PORT: Final[int] = 5900
 VNC_WEBSOCKET_PORT: Final[int] = 6080
+OPENVSCODE_PORT: Final[int] = 8765
+CHROME_DEVTOOLS_PORT: Final[int] = 9222
+
+EXCLUDED_PREVIEW_PORTS: Final[set[int]] = {
+    22,
+    3456,
+    4040,
+    49982,
+    49983,
+    VNC_PORT,
+    VNC_WEBSOCKET_PORT,
+    OPENVSCODE_PORT,
+    CHROME_DEVTOOLS_PORT,
+}
 
 SANDBOX_SYSTEM_VARIABLES: Final[list[str]] = [
     "SHELL",

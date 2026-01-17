@@ -30,51 +30,55 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-async def authenticate_user(token: str) -> tuple[User | None, str | None, str]:
+async def authenticate_user(
+    token: str,
+) -> tuple[User | None, str | None, str | None, str]:
     try:
         async with SessionLocal() as db:
             user = await get_user_from_token(token, db)
             if not user:
-                return None, None, "docker"
+                return None, None, None, "docker"
 
             user_service = UserService(session_factory=SessionLocal)
             try:
                 user_settings = await user_service.get_user_settings(user.id, db=db)
                 e2b_api_key = user_settings.e2b_api_key
+                modal_api_key = user_settings.modal_api_key
                 sandbox_provider = user_settings.sandbox_provider
             except UserException:
                 e2b_api_key = None
+                modal_api_key = None
                 sandbox_provider = "docker"
 
-        return user, e2b_api_key, sandbox_provider
+        return user, e2b_api_key, modal_api_key, sandbox_provider
 
     except Exception as e:
         logger.warning("WebSocket authentication failed: %s", e)
-        return None, None, "docker"
+        return None, None, None, "docker"
 
 
 async def wait_for_auth(
     websocket: WebSocket, timeout: float = 10.0
-) -> tuple[User | None, str | None, str]:
+) -> tuple[User | None, str | None, str | None, str]:
     try:
         message = await asyncio.wait_for(websocket.receive(), timeout=timeout)
     except asyncio.TimeoutError:
-        return None, None, "docker"
+        return None, None, None, "docker"
 
     if "text" not in message:
-        return None, None, "docker"
+        return None, None, None, "docker"
 
     try:
         data = json.loads(message["text"])
     except json.JSONDecodeError:
-        return None, None, "docker"
+        return None, None, None, "docker"
 
     if data.get("type") != "auth":
-        return None, None, "docker"
+        return None, None, None, "docker"
 
     token = data.get("token")
     if not token:
-        return None, None, "docker"
+        return None, None, None, "docker"
 
     return await authenticate_user(token)
 
@@ -193,7 +197,9 @@ async def terminal_websocket(
 ) -> None:
     await websocket.accept()
 
-    user, e2b_api_key, user_sandbox_provider = await wait_for_auth(websocket)
+    user, e2b_api_key, modal_api_key, user_sandbox_provider = await wait_for_auth(
+        websocket
+    )
     if not user:
         await websocket.close(code=4001, reason="Authentication failed")
         return
@@ -211,14 +217,28 @@ async def terminal_websocket(
             return
         sandbox_provider_type = row.sandbox_provider or user_sandbox_provider
 
-    if sandbox_provider_type == SandboxProviderType.E2B and not e2b_api_key:
+    provider_type = SandboxProviderType(sandbox_provider_type)
+    if provider_type == SandboxProviderType.E2B and not e2b_api_key:
         await websocket.close(
             code=4003,
             reason="E2B API key is required. Please configure your E2B API key in Settings.",
         )
         return
 
-    provider = create_sandbox_provider(sandbox_provider_type, e2b_api_key)
+    if provider_type == SandboxProviderType.MODAL and not modal_api_key:
+        await websocket.close(
+            code=4003,
+            reason="Modal API key is required. Please configure your Modal API key in Settings.",
+        )
+        return
+
+    api_key = None
+    if provider_type == SandboxProviderType.E2B:
+        api_key = e2b_api_key
+    elif provider_type == SandboxProviderType.MODAL:
+        api_key = modal_api_key
+
+    provider = create_sandbox_provider(provider_type, api_key)
 
     sandbox_service = SandboxService(provider)
     session = TerminalSession(sandbox_service, sandbox_id, websocket)

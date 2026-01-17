@@ -19,7 +19,7 @@ from app.services.exceptions import ClaudeAgentException, UserException
 from app.services.message import MessageService
 from app.services.queue import QueueService, serialize_message_attachments
 from app.services.sandbox import SandboxService
-from app.services.sandbox_providers import create_sandbox_provider
+from app.services.sandbox_providers import SandboxProviderType, create_sandbox_provider
 from app.services.streaming.cancellation import CancellationHandler, StreamCancelled
 from app.services.streaming.events import StreamEvent
 from app.services.streaming.publisher import StreamPublisher
@@ -559,9 +559,14 @@ async def initialize_and_run_chat(
                 raise UserException("User settings not found")
 
             provider_type = user_settings.sandbox_provider
+            api_key = None
+            if provider_type == SandboxProviderType.E2B.value:
+                api_key = user_settings.e2b_api_key
+            elif provider_type == SandboxProviderType.MODAL.value:
+                api_key = user_settings.modal_api_key
             provider = create_sandbox_provider(
                 provider_type=provider_type,
-                api_key=user_settings.e2b_api_key,
+                api_key=api_key,
             )
 
         sandbox_service = SandboxService(

@@ -75,6 +75,7 @@ class UserSettings(Base):
         EncryptedString, nullable=True
     )
     e2b_api_key: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
+    modal_api_key: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
     sandbox_provider: Mapped[str] = mapped_column(String, default="docker")
     codex_auth_json: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
     custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
