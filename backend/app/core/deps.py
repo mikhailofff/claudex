@@ -1,10 +1,10 @@
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.core.user_manager import optional_current_active_user
 from app.db.session import SessionLocal, get_db
@@ -90,17 +90,58 @@ def get_scheduler_service() -> SchedulerService:
     return SchedulerService(session_factory=SessionLocal)
 
 
+async def validate_sandbox_ownership(
+    sandbox_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    query = select(Chat.sandbox_id).where(
+        Chat.sandbox_id == sandbox_id,
+        Chat.user_id == current_user.id,
+        Chat.deleted_at.is_(None),
+    )
+    result = await db.execute(query)
+    if not result.one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sandbox not found",
+        )
+    return sandbox_id
+
+
 async def get_sandbox_service(
+    request: Request,
     user: User | None = Depends(optional_current_active_user),
     db: AsyncSession = Depends(get_db),
     user_service: UserService = Depends(get_user_service),
 ) -> AsyncIterator[SandboxService]:
-    from app.core.config import get_settings
-
     settings = get_settings()
     provider_type = SandboxProviderType(settings.SANDBOX_PROVIDER)
     e2b_api_key = None
     modal_api_key = None
+
+    sandbox_id = request.path_params.get("sandbox_id")
+    if sandbox_id:
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+            )
+        query = select(Chat.sandbox_provider).where(
+            Chat.sandbox_id == sandbox_id,
+            Chat.user_id == user.id,
+            Chat.deleted_at.is_(None),
+        )
+        result = await db.execute(query)
+        row = result.one_or_none()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Sandbox not found",
+            )
+        sandbox_provider = row.sandbox_provider
+    else:
+        sandbox_provider = None
 
     if user:
         try:
@@ -113,6 +154,9 @@ async def get_sandbox_service(
                 modal_api_key = user_settings.modal_api_key
         except UserException:
             pass
+
+    if sandbox_provider:
+        provider_type = SandboxProviderType(sandbox_provider)
 
     api_key = None
     if provider_type == SandboxProviderType.E2B:
@@ -135,66 +179,6 @@ async def get_storage_service(
     sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> StorageService:
     return StorageService(sandbox_service)
-
-
-@dataclass
-class SandboxContext:
-    sandbox_id: str
-    sandbox_provider: str | None = None
-
-
-async def get_sandbox_context(
-    sandbox_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> SandboxContext:
-    query = select(Chat.sandbox_id, Chat.sandbox_provider).where(
-        Chat.sandbox_id == sandbox_id,
-        Chat.user_id == current_user.id,
-        Chat.deleted_at.is_(None),
-    )
-    result = await db.execute(query)
-    row = result.one_or_none()
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Sandbox not found"
-        )
-
-    return SandboxContext(
-        sandbox_id=row.sandbox_id,
-        sandbox_provider=row.sandbox_provider,
-    )
-
-
-async def get_sandbox_service_for_context(
-    context: SandboxContext = Depends(get_sandbox_context),
-    current_user: User = Depends(get_current_user),
-    user_service: UserService = Depends(get_user_service),
-    db: AsyncSession = Depends(get_db),
-) -> AsyncIterator[SandboxService]:
-    try:
-        user_settings = await user_service.get_user_settings(current_user.id, db=db)
-        default_provider = user_settings.sandbox_provider
-        e2b_api_key = user_settings.e2b_api_key
-        modal_api_key = user_settings.modal_api_key
-    except UserException:
-        default_provider = "docker"
-        e2b_api_key = None
-        modal_api_key = None
-
-    provider_type = context.sandbox_provider or default_provider
-
-    api_key = None
-    if provider_type == SandboxProviderType.E2B.value:
-        api_key = e2b_api_key
-    elif provider_type == SandboxProviderType.MODAL.value:
-        api_key = modal_api_key
-
-    provider = create_sandbox_provider(provider_type, api_key=api_key)
-    try:
-        yield SandboxService(provider)
-    finally:
-        await provider.cleanup()
 
 
 async def get_chat_service(

@@ -1,10 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from app.core.deps import (
-    SandboxContext,
-    get_sandbox_context,
-    get_sandbox_service_for_context,
-)
+from app.core.deps import get_sandbox_service, validate_sandbox_ownership
 from app.models.schemas import (
     AddSecretRequest,
     BrowserStatusResponse,
@@ -33,39 +29,39 @@ router = APIRouter()
 
 @router.get("/{sandbox_id}/preview-links", response_model=PreviewLinksResponse)
 async def get_preview_links(
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> PreviewLinksResponse:
-    links = await sandbox_service.get_preview_links(context.sandbox_id)
+    links = await sandbox_service.get_preview_links(sandbox_id)
     return PreviewLinksResponse(links=[PortPreviewLink(**link) for link in links])
 
 
 @router.get("/{sandbox_id}/ide-url", response_model=IDEUrlResponse)
 async def get_ide_url(
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> IDEUrlResponse:
-    url = await sandbox_service.get_ide_url(context.sandbox_id)
+    url = await sandbox_service.get_ide_url(sandbox_id)
     return IDEUrlResponse(url=url)
 
 
 @router.get("/{sandbox_id}/vnc-url", response_model=VNCUrlResponse)
 async def get_vnc_url(
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> VNCUrlResponse:
-    url = await sandbox_service.get_vnc_url(context.sandbox_id)
+    url = await sandbox_service.get_vnc_url(sandbox_id)
     return VNCUrlResponse(url=url)
 
 
 @router.post("/{sandbox_id}/browser/start", response_model=BrowserStatusResponse)
 async def start_browser(
     request: StartBrowserRequest,
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> BrowserStatusResponse:
     try:
-        await sandbox_service.start_browser(context.sandbox_id, request.url)
+        await sandbox_service.start_browser(sandbox_id, request.url)
         return BrowserStatusResponse(running=True, current_url=request.url)
     except SandboxException as e:
         raise HTTPException(
@@ -81,11 +77,11 @@ async def start_browser(
 
 @router.post("/{sandbox_id}/browser/stop", response_model=MessageResponse)
 async def stop_browser(
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> MessageResponse:
     try:
-        await sandbox_service.stop_browser(context.sandbox_id)
+        await sandbox_service.stop_browser(sandbox_id)
         return MessageResponse(message="Browser stopped")
     except SandboxException as e:
         raise HTTPException(
@@ -101,10 +97,10 @@ async def stop_browser(
 
 @router.get("/{sandbox_id}/browser/status", response_model=BrowserStatusResponse)
 async def get_browser_status(
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> BrowserStatusResponse:
-    result = await sandbox_service.get_browser_status(context.sandbox_id)
+    result = await sandbox_service.get_browser_status(sandbox_id)
     return BrowserStatusResponse(running=result.get("running", False))
 
 
@@ -113,10 +109,10 @@ async def get_browser_status(
     response_model=SandboxFilesMetadataResponse,
 )
 async def get_files_metadata(
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> SandboxFilesMetadataResponse:
-    files = await sandbox_service.get_files_metadata(context.sandbox_id)
+    files = await sandbox_service.get_files_metadata(sandbox_id)
     return SandboxFilesMetadataResponse(files=[FileMetadata(**f) for f in files])
 
 
@@ -125,13 +121,11 @@ async def get_files_metadata(
 )
 async def get_file_content(
     file_path: str,
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> FileContentResponse:
     try:
-        file_data = await sandbox_service.get_file_content(
-            context.sandbox_id, file_path
-        )
+        file_data = await sandbox_service.get_file_content(sandbox_id, file_path)
         return FileContentResponse(**file_data)
     except SandboxException as e:
         raise HTTPException(
@@ -148,13 +142,11 @@ async def get_file_content(
 @router.put("/{sandbox_id}/files", response_model=UpdateFileResponse)
 async def update_file_in_sandbox(
     request: UpdateFileRequest,
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> UpdateFileResponse:
     try:
-        await sandbox_service.write_file(
-            context.sandbox_id, request.file_path, request.content
-        )
+        await sandbox_service.write_file(sandbox_id, request.file_path, request.content)
         return UpdateFileResponse(
             success=True, message=f"File {request.file_path} updated successfully"
         )
@@ -172,11 +164,11 @@ async def update_file_in_sandbox(
 
 @router.get("/{sandbox_id}/secrets", response_model=SecretsListResponse)
 async def get_secrets(
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> SecretsListResponse:
     try:
-        secrets = await sandbox_service.get_secrets(context.sandbox_id)
+        secrets = await sandbox_service.get_secrets(sandbox_id)
         return SecretsListResponse(secrets=[SecretResponse(**s) for s in secrets])
     except SandboxException as e:
         raise HTTPException(
@@ -193,13 +185,11 @@ async def get_secrets(
 @router.post("/{sandbox_id}/secrets", response_model=MessageResponse)
 async def add_secret(
     secret_data: AddSecretRequest,
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> MessageResponse:
     try:
-        await sandbox_service.add_secret(
-            context.sandbox_id, secret_data.key, secret_data.value
-        )
+        await sandbox_service.add_secret(sandbox_id, secret_data.key, secret_data.value)
         return MessageResponse(message=f"Secret {secret_data.key} added successfully")
     except SandboxException as e:
         raise HTTPException(
@@ -217,11 +207,11 @@ async def add_secret(
 async def update_secret(
     key: str,
     secret_data: UpdateSecretRequest,
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> MessageResponse:
     try:
-        await sandbox_service.update_secret(context.sandbox_id, key, secret_data.value)
+        await sandbox_service.update_secret(sandbox_id, key, secret_data.value)
         return MessageResponse(message=f"Secret {key} updated successfully")
     except SandboxException as e:
         raise HTTPException(
@@ -238,11 +228,11 @@ async def update_secret(
 @router.delete("/{sandbox_id}/secrets/{key}", response_model=MessageResponse)
 async def delete_secret(
     key: str,
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> MessageResponse:
     try:
-        await sandbox_service.delete_secret(context.sandbox_id, key)
+        await sandbox_service.delete_secret(sandbox_id, key)
         return MessageResponse(message=f"Secret {key} deleted successfully")
     except SandboxException as e:
         raise HTTPException(
@@ -259,11 +249,11 @@ async def delete_secret(
 @router.put("/{sandbox_id}/ide-theme", response_model=MessageResponse)
 async def update_ide_theme(
     request: UpdateIDEThemeRequest,
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> MessageResponse:
     try:
-        await sandbox_service.update_ide_theme(context.sandbox_id, request.theme)
+        await sandbox_service.update_ide_theme(sandbox_id, request.theme)
         return MessageResponse(message=f"IDE theme updated to {request.theme}")
     except SandboxException as e:
         raise HTTPException(
@@ -279,16 +269,16 @@ async def update_ide_theme(
 
 @router.get("/{sandbox_id}/download-zip")
 async def download_sandbox_files(
-    context: SandboxContext = Depends(get_sandbox_context),
-    sandbox_service: SandboxService = Depends(get_sandbox_service_for_context),
+    sandbox_id: str = Depends(validate_sandbox_ownership),
+    sandbox_service: SandboxService = Depends(get_sandbox_service),
 ) -> Response:
     try:
-        zip_bytes = await sandbox_service.generate_zip_download(context.sandbox_id)
+        zip_bytes = await sandbox_service.generate_zip_download(sandbox_id)
         return Response(
             content=zip_bytes,
             media_type="application/zip",
             headers={
-                "Content-Disposition": f'attachment; filename="sandbox_{context.sandbox_id}.zip"'
+                "Content-Disposition": f'attachment; filename="sandbox_{sandbox_id}.zip"'
             },
         )
     except SandboxException as e:

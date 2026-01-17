@@ -38,7 +38,6 @@ from app.core.deps import (
     get_ai_model_service,
     get_chat_service,
     get_sandbox_service,
-    get_sandbox_service_for_context,
     get_user_service,
 )
 from app.core.security import get_password_hash
@@ -264,9 +263,6 @@ def create_e2e_application(
     async def override_get_sandbox_service():
         yield sandbox_service
 
-    async def override_get_sandbox_service_for_context():
-        yield sandbox_service
-
     def override_get_user_service():
         return UserService(session_factory=session_factory)
 
@@ -287,9 +283,6 @@ def create_e2e_application(
 
     application.dependency_overrides[get_db] = override_get_db
     application.dependency_overrides[get_sandbox_service] = override_get_sandbox_service
-    application.dependency_overrides[get_sandbox_service_for_context] = (
-        override_get_sandbox_service_for_context
-    )
     application.dependency_overrides[get_user_service] = override_get_user_service
     application.dependency_overrides[get_chat_service] = override_get_chat_service
     application.dependency_overrides[get_ai_model_service] = (
