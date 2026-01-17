@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.models.db_models.enums import ModelProvider
 from app.models.types import JSONList
-from app.services.ai_model import AIModelService
+from app.services.provider import ProviderService
 
 if TYPE_CHECKING:
     from app.models.db_models import UserSettings
-    from app.services.base import SessionFactoryType
 
 
 class APIKeyValidationError(ValueError):
@@ -23,29 +21,38 @@ def normalize_json_list(value: JSONList | None) -> JSONList:
     raise ValueError(f"Expected list or None, got {type(value).__name__}")
 
 
-async def validate_model_api_keys(
-    user_settings: UserSettings,
+def validate_model_api_keys(
+    user_settings: "UserSettings",
     model_id: str,
-    session_factory: "SessionFactoryType | None" = None,
 ) -> None:
-    ai_model_service = AIModelService(session_factory=session_factory)
-    provider = await ai_model_service.get_model_provider(model_id)
+    provider_service = ProviderService()
+    provider, actual_model_id = provider_service.get_provider_for_model(
+        user_settings, model_id
+    )
 
-    if provider == ModelProvider.ZAI:
-        if not user_settings.z_ai_api_key:
+    if not provider:
+        if ":" in model_id:
+            provider_id = model_id.split(":", 1)[0]
             raise APIKeyValidationError(
-                f"Z.AI API key is required for model '{model_id}'. "
-                "Please configure your Z.AI API key in Settings."
+                f"Provider '{provider_id}' not found. "
+                "Please configure it in Settings > Providers."
             )
-    elif provider == ModelProvider.OPENROUTER:
-        if not user_settings.openrouter_api_key:
-            raise APIKeyValidationError(
-                f"OpenRouter API key is required for model '{model_id}'. "
-                "Please configure your OpenRouter API key in Settings."
-            )
-    else:
-        if not user_settings.claude_code_oauth_token:
-            raise APIKeyValidationError(
-                f"Claude Code Auth Token is required for model '{model_id}'. "
-                "Please configure your Claude Code Auth Token in Settings."
-            )
+        raise APIKeyValidationError(
+            f"No provider configured for model '{model_id}'. "
+            "Please configure a provider in Settings > Providers."
+        )
+
+    if not provider.get("enabled", True):
+        raise APIKeyValidationError(f"Provider '{provider.get('name')}' is disabled.")
+
+    if not provider.get("auth_token"):
+        raise APIKeyValidationError(
+            f"API key is required for provider '{provider.get('name')}'. "
+            "Please configure it in Settings."
+        )
+
+    provider_type = provider.get("provider_type", "custom")
+    if provider_type == "custom" and not provider.get("base_url"):
+        raise APIKeyValidationError(
+            f"Base URL is required for custom provider '{provider.get('name')}'."
+        )

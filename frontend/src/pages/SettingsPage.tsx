@@ -20,6 +20,7 @@ import {
 } from '@/components/ui';
 import toast from 'react-hot-toast';
 import { GeneralSettingsTab } from '@/components/settings/tabs/GeneralSettingsTab';
+import { ProvidersSettingsTab } from '@/components/settings/tabs/ProvidersSettingsTab';
 import { McpSettingsTab } from '@/components/settings/tabs/McpSettingsTab';
 import { AgentsSettingsTab } from '@/components/settings/tabs/AgentsSettingsTab';
 import { InstructionsSettingsTab } from '@/components/settings/tabs/InstructionsSettingsTab';
@@ -29,13 +30,14 @@ import { AgentEditDialog } from '@/components/settings/dialogs/AgentEditDialog';
 import { McpDialog } from '@/components/settings/dialogs/McpDialog';
 import { EnvVarDialog } from '@/components/settings/dialogs/EnvVarDialog';
 import { TaskDialog } from '@/components/settings/dialogs/TaskDialog';
+import { ProviderDialog } from '@/components/settings/dialogs/ProviderDialog';
 import { SkillsSettingsTab } from '@/components/settings/tabs/SkillsSettingsTab';
 import { CommandsSettingsTab } from '@/components/settings/tabs/CommandsSettingsTab';
 import { CommandEditDialog } from '@/components/settings/dialogs/CommandEditDialog';
 import { PromptsSettingsTab } from '@/components/settings/tabs/PromptsSettingsTab';
 import { PromptEditDialog } from '@/components/settings/dialogs/PromptEditDialog';
 import { MarketplaceSettingsTab } from '@/components/settings/tabs/MarketplaceSettingsTab';
-import type { ApiFieldKey, CustomPrompt, SandboxProviderType } from '@/types';
+import type { ApiFieldKey, CustomPrompt, CustomProvider, SandboxProviderType } from '@/types';
 import { useModelsQuery } from '@/hooks/queries';
 import { useCrudForm } from '@/hooks/useCrudForm';
 import { useTaskManagement } from '@/hooks/useTaskManagement';
@@ -54,6 +56,7 @@ import {
 
 type TabKey =
   | 'general'
+  | 'providers'
   | 'marketplace'
   | 'mcp'
   | 'agents'
@@ -71,14 +74,12 @@ const createFallbackSettings = (): UserSettings => ({
   id: '',
   user_id: '',
   github_personal_access_token: null,
-  claude_code_oauth_token: null,
-  z_ai_api_key: null,
-  openrouter_api_key: null,
   e2b_api_key: null,
   modal_api_key: null,
   sandbox_provider: null,
   codex_auth_json: null,
   custom_instructions: null,
+  custom_providers: null,
   custom_agents: null,
   custom_mcps: null,
   custom_env_vars: null,
@@ -94,15 +95,13 @@ const createFallbackSettings = (): UserSettings => ({
 const TAB_FIELDS: Record<TabKey, (keyof UserSettings)[]> = {
   general: [
     'github_personal_access_token',
-    'claude_code_oauth_token',
-    'z_ai_api_key',
-    'openrouter_api_key',
     'e2b_api_key',
     'modal_api_key',
     'sandbox_provider',
     'codex_auth_json',
     'auto_compact_disabled',
   ],
+  providers: ['custom_providers'],
   marketplace: [],
   mcp: ['custom_mcps'],
   agents: ['custom_agents'],
@@ -130,6 +129,7 @@ const SettingsPage: React.FC = () => {
 
   const tabs: { id: TabKey; label: string }[] = [
     { id: 'general', label: 'General' },
+    { id: 'providers', label: 'Providers' },
     { id: 'marketplace', label: 'Marketplace' },
     { id: 'mcp', label: 'MCP' },
     { id: 'agents', label: 'Agents' },
@@ -187,14 +187,12 @@ const SettingsPage: React.FC = () => {
       const payload: UserSettingsUpdate = {};
       const fields: (keyof UserSettingsUpdate)[] = [
         'github_personal_access_token',
-        'claude_code_oauth_token',
-        'z_ai_api_key',
-        'openrouter_api_key',
         'e2b_api_key',
         'modal_api_key',
         'sandbox_provider',
         'codex_auth_json',
         'custom_instructions',
+        'custom_providers',
         'custom_agents',
         'custom_mcps',
         'custom_env_vars',
@@ -322,11 +320,72 @@ const SettingsPage: React.FC = () => {
   );
   const taskManagement = useTaskManagement(defaultModelId);
 
+  const [isProviderDialogOpen, setIsProviderDialogOpen] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<CustomProvider | null>(null);
+
+  const handleAddProvider = () => {
+    setEditingProvider(null);
+    setIsProviderDialogOpen(true);
+  };
+
+  const handleEditProvider = (provider: CustomProvider) => {
+    setEditingProvider(provider);
+    setIsProviderDialogOpen(true);
+  };
+
+  const handleDeleteProvider = (providerId: string) => {
+    persistSettings(
+      (prev) => ({
+        ...prev,
+        custom_providers: (prev.custom_providers || []).filter((p) => p.id !== providerId),
+      }),
+      { successMessage: 'Provider deleted' },
+    );
+  };
+
+  const handleToggleProvider = (providerId: string, enabled: boolean) => {
+    persistSettings((prev) => ({
+      ...prev,
+      custom_providers: (prev.custom_providers || []).map((p) =>
+        p.id === providerId ? { ...p, enabled } : p,
+      ),
+    }));
+  };
+
+  const handleSaveProvider = (provider: CustomProvider) => {
+    const providers = localSettings.custom_providers || [];
+    const existingIndex = providers.findIndex((p) => p.id === provider.id);
+
+    if (existingIndex >= 0) {
+      persistSettings(
+        (prev) => ({
+          ...prev,
+          custom_providers: (prev.custom_providers || []).map((p) =>
+            p.id === provider.id ? provider : p,
+          ),
+        }),
+        { successMessage: 'Provider updated' },
+      );
+    } else {
+      persistSettings(
+        (prev) => ({
+          ...prev,
+          custom_providers: [...(prev.custom_providers || []), provider],
+        }),
+        { successMessage: 'Provider added' },
+      );
+    }
+    setIsProviderDialogOpen(false);
+    setEditingProvider(null);
+  };
+
+  const handleProviderDialogClose = () => {
+    setIsProviderDialogOpen(false);
+    setEditingProvider(null);
+  };
+
   const [revealedFields, setRevealedFields] = useState<Record<ApiFieldKey, boolean>>({
     github_personal_access_token: false,
-    claude_code_oauth_token: false,
-    z_ai_api_key: false,
-    openrouter_api_key: false,
     e2b_api_key: false,
     modal_api_key: false,
   });
@@ -568,6 +627,18 @@ const SettingsPage: React.FC = () => {
                 </div>
               )}
 
+              {activeTab === 'providers' && (
+                <div role="tabpanel" id="providers-panel" aria-labelledby="providers-tab">
+                  <ProvidersSettingsTab
+                    providers={localSettings.custom_providers ?? null}
+                    onAddProvider={handleAddProvider}
+                    onEditProvider={handleEditProvider}
+                    onDeleteProvider={handleDeleteProvider}
+                    onToggleProvider={handleToggleProvider}
+                  />
+                </div>
+              )}
+
               {activeTab === 'marketplace' && (
                 <div role="tabpanel" id="marketplace-panel" aria-labelledby="marketplace-tab">
                   <MarketplaceSettingsTab />
@@ -769,6 +840,13 @@ const SettingsPage: React.FC = () => {
         saving={commandManagement.isSavingEdit}
         onClose={commandManagement.handleEditDialogClose}
         onSave={commandManagement.handleSaveEdit}
+      />
+
+      <ProviderDialog
+        isOpen={isProviderDialogOpen}
+        provider={editingProvider}
+        onClose={handleProviderDialogClose}
+        onSave={handleSaveProvider}
       />
     </div>
   );

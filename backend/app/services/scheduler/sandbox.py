@@ -84,7 +84,7 @@ async def validate_user_api_keys(
 
     try:
         user_settings = await user_service.get_user_settings(user.id, db=db)
-        await validate_model_api_keys(user_settings, model_id, session_factory)
+        validate_model_api_keys(user_settings, model_id)
         return user_settings, None
     except (ValueError, APIKeyValidationError) as e:
         logger.error("API keys not configured for user %s: %s", user.id, e)
@@ -123,13 +123,13 @@ async def create_and_initialize_sandbox(
     await sandbox_service.initialize_sandbox(
         sandbox_id=sandbox_id,
         github_token=user_settings.github_personal_access_token,
-        openrouter_api_key=user_settings.openrouter_api_key,
         custom_env_vars=user_settings.custom_env_vars,
         custom_skills=user_settings.custom_skills,
         custom_slash_commands=user_settings.custom_slash_commands,
         custom_agents=user_settings.custom_agents,
         user_id=str(user.id),
         auto_compact_disabled=user_settings.auto_compact_disabled,
+        custom_providers=user_settings.custom_providers,
     )
 
     return sandbox_service, sandbox_id

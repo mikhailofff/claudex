@@ -1,11 +1,34 @@
 from datetime import datetime
+from enum import Enum
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.types import JSONList
 from app.utils.validators import normalize_json_list
+
+
+class ProviderType(str, Enum):
+    ANTHROPIC = "anthropic"
+    OPENROUTER = "openrouter"
+    CUSTOM = "custom"
+
+
+class CustomProviderModel(BaseModel):
+    model_id: str
+    name: str
+    enabled: bool = True
+
+
+class CustomProvider(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    name: str
+    provider_type: ProviderType = ProviderType.CUSTOM
+    base_url: str | None = None
+    auth_token: str | None = None
+    enabled: bool = True
+    models: list[CustomProviderModel] = Field(default_factory=list)
 
 
 class CustomAgent(BaseModel):
@@ -85,14 +108,12 @@ class InstalledPluginSchema(BaseModel):
 
 class UserSettingsBase(BaseModel):
     github_personal_access_token: str | None = None
-    claude_code_oauth_token: str | None = None
-    z_ai_api_key: str | None = None
-    openrouter_api_key: str | None = None
     e2b_api_key: str | None = None
     modal_api_key: str | None = None
     sandbox_provider: Literal["docker", "e2b", "modal"] = "docker"
     codex_auth_json: str | None = None
     custom_instructions: str | None = Field(default=None, max_length=1500)
+    custom_providers: list[CustomProvider] | None = None
     custom_agents: list[CustomAgent] | None = None
     custom_mcps: list[CustomMcp] | None = None
     custom_env_vars: list[CustomEnvVar] | None = None
@@ -104,6 +125,7 @@ class UserSettingsBase(BaseModel):
     auto_compact_disabled: bool = False
 
     @field_validator(
+        "custom_providers",
         "custom_agents",
         "custom_mcps",
         "custom_env_vars",

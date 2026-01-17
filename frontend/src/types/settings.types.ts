@@ -1,10 +1,4 @@
-export type ApiFieldKey =
-  | 'github_personal_access_token'
-  | 'claude_code_oauth_token'
-  | 'z_ai_api_key'
-  | 'openrouter_api_key'
-  | 'e2b_api_key'
-  | 'modal_api_key';
+export type ApiFieldKey = 'github_personal_access_token' | 'e2b_api_key' | 'modal_api_key';
 
 export interface HelperTextLink {
   prefix: string;

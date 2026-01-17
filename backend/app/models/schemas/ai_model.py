@@ -1,20 +1,11 @@
-from datetime import datetime
-from uuid import UUID
-
 from pydantic import BaseModel
 
-from app.models.db_models import ModelProvider
+from app.models.schemas.settings import ProviderType
 
 
 class AIModelResponse(BaseModel):
-    id: UUID
     model_id: str
     name: str
-    provider: ModelProvider
-    is_active: bool
-    sort_order: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    provider_id: str
+    provider_name: str
+    provider_type: ProviderType

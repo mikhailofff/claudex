@@ -76,18 +76,34 @@ export interface CustomPrompt {
 
 export type SandboxProviderType = 'docker' | 'e2b' | 'modal';
 
+export type ProviderType = 'anthropic' | 'openrouter' | 'custom';
+
+export interface CustomProviderModel {
+  model_id: string;
+  name: string;
+  enabled: boolean;
+}
+
+export interface CustomProvider {
+  id: string;
+  name: string;
+  provider_type: ProviderType;
+  base_url: string | null;
+  auth_token: string | null;
+  enabled: boolean;
+  models: CustomProviderModel[];
+}
+
 export interface UserSettings {
   id: string;
   user_id: string;
   github_personal_access_token: string | null;
-  claude_code_oauth_token: string | null;
-  z_ai_api_key: string | null;
-  openrouter_api_key: string | null;
   e2b_api_key: string | null;
   modal_api_key: string | null;
   sandbox_provider: SandboxProviderType | null;
   codex_auth_json: string | null;
   custom_instructions: string | null;
+  custom_providers: CustomProvider[] | null;
   custom_agents: CustomAgent[] | null;
   custom_mcps: CustomMcp[] | null;
   custom_env_vars: CustomEnvVar[] | null;

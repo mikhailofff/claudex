@@ -1,5 +1,6 @@
 import type { ToolEventPayload } from './tools.types';
 import type { LineReview } from './review.types';
+import type { ProviderType } from './user.types';
 
 export interface MessageAttachment {
   id: string;
@@ -82,17 +83,12 @@ export interface PreviewLinksResponse {
   }>;
 }
 
-export type ModelProvider = 'anthropic' | 'zai' | 'openrouter';
-
 export interface Model {
-  id: string;
   model_id: string;
   name: string;
-  provider: ModelProvider;
-  is_active: boolean;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
+  provider_id: string;
+  provider_name: string;
+  provider_type: ProviderType;
 }
 
 export interface ContextUsage {

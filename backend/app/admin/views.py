@@ -3,7 +3,6 @@ from typing import Any, TypeVar
 
 from sqladmin import ModelView
 from app.models.db_models import (
-    AIModel,
     User,
     Chat,
     Message,
@@ -12,7 +11,6 @@ from app.models.db_models import (
 )
 from wtforms import PasswordField, SelectField
 from app.models.db_models.enums import (
-    ModelProvider,
     MessageRole,
     MessageStreamStatus,
     AttachmentType,
@@ -64,61 +62,6 @@ def _calculate_remaining_messages(user: User) -> str | int:
                 total_messages_today += 1
 
     return max(0, limit - total_messages_today)
-
-
-class AIModelAdmin(ModelView, model=AIModel):
-    column_list = [
-        "id",
-        "model_id",
-        "name",
-        "provider",
-        "is_active",
-        "sort_order",
-        "created_at",
-        "updated_at",
-    ]
-    column_searchable_list = ["model_id", "name"]
-    column_sortable_list = [
-        "model_id",
-        "name",
-        "provider",
-        "is_active",
-        "sort_order",
-        "created_at",
-        "updated_at",
-    ]
-    column_default_sort = [("sort_order", False)]
-
-    column_formatters = {
-        "provider": lambda m, _: m.provider.value if m.provider else "",
-        "created_at": lambda m, _: m.created_at.strftime("%Y-%m-%d %H:%M:%S")
-        if m.created_at
-        else "",
-        "updated_at": lambda m, _: m.updated_at.strftime("%Y-%m-%d %H:%M:%S")
-        if m.updated_at
-        else "",
-    }
-
-    column_labels = {
-        "model_id": "Model ID",
-        "is_active": "Active",
-        "sort_order": "Sort Order",
-    }
-
-    form_overrides = {
-        "provider": SelectField,
-    }
-
-    form_args = {
-        "provider": {
-            "choices": [(p.value, p.value) for p in ModelProvider],
-            "coerce": _coerce_enum(ModelProvider),
-        },
-    }
-
-    name = "AI Model"
-    name_plural = "AI Models"
-    icon = "fa-solid fa-robot"
 
 
 class UserAdmin(ModelView, model=User):

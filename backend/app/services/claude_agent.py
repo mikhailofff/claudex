@@ -16,9 +16,8 @@ from app.core.config import get_settings
 from app.core.security import create_chat_scoped_token
 from app.db.session import SessionLocal
 from app.models.db_models import Chat, User, UserSettings
-from app.models.db_models.enums import ModelProvider
 from app.prompts.enhance_prompt import get_enhance_prompt
-from app.services.ai_model import AIModelService
+from app.services.provider import ProviderService
 from app.services.exceptions import ClaudeAgentException
 from app.services.sandbox_providers import SandboxProviderType, create_docker_config
 from app.services.transports import (
@@ -270,38 +269,52 @@ class ClaudeAgentService:
     ) -> E2BSandboxTransport | DockerSandboxTransport | ModalSandboxTransport | None:
         return self._active_transport
 
-    async def _build_auth_env(
+    def _build_auth_env(
         self, model_id: str, user_settings: UserSettings
-    ) -> tuple[dict[str, str], ModelProvider | None]:
-        # Model-specific environment configuration:
-        # - Z.AI models: Route through Z.AI's Anthropic-compatible API using user's Z.AI API key
-        # - OpenRouter models: Route through local CCR proxy (127.0.0.1:3456) with special config
-        # - Default (Anthropic models): Use user's Claude OAuth token directly
-        ai_model_service = AIModelService(session_factory=self.session_factory)
-        provider = await ai_model_service.get_model_provider(model_id)
+    ) -> tuple[dict[str, str], str | None]:
+        provider_service = ProviderService()
+        provider, actual_model_id = provider_service.get_provider_for_model(
+            user_settings, model_id
+        )
 
         env: dict[str, str] = {}
-        if provider == ModelProvider.ZAI and user_settings.z_ai_api_key:
-            env["ANTHROPIC_AUTH_TOKEN"] = user_settings.z_ai_api_key
-            env["ANTHROPIC_BASE_URL"] = "https://api.z.ai/api/anthropic"
-        elif (
-            provider == ModelProvider.ANTHROPIC
-            and user_settings.claude_code_oauth_token
-        ):
-            env["CLAUDE_CODE_OAUTH_TOKEN"] = user_settings.claude_code_oauth_token
+        if not provider:
+            return env, None
 
-        return env, provider
+        provider_type = provider.get("provider_type", "custom")
+        auth_token = provider.get("auth_token")
+
+        if provider_type == "anthropic":
+            if auth_token:
+                env["CLAUDE_CODE_OAUTH_TOKEN"] = auth_token
+        elif provider_type == "openrouter":
+            if auth_token:
+                env["OPENROUTER_API_KEY"] = auth_token
+            env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:3456"
+            env["ANTHROPIC_AUTH_TOKEN"] = "placeholder"
+        elif provider_type == "custom":
+            if auth_token and provider.get("base_url"):
+                env["ANTHROPIC_AUTH_TOKEN"] = auth_token
+                env["ANTHROPIC_BASE_URL"] = provider["base_url"]
+
+        return env, provider_type
 
     async def enhance_prompt(self, prompt: str, model_id: str, user: User) -> str:
         user_settings = await UserService(
             session_factory=self.session_factory
         ).get_user_settings(user.id)
-        env, _ = await self._build_auth_env(model_id, user_settings)
+
+        provider_service = ProviderService()
+        _, actual_model_id = provider_service.get_provider_for_model(
+            user_settings, model_id
+        )
+
+        env, _ = self._build_auth_env(model_id, user_settings)
 
         options = ClaudeAgentOptions(
             system_prompt=get_enhance_prompt(),
             permission_mode="bypassPermissions",
-            model=model_id,
+            model=actual_model_id,
             max_turns=1,
             env=env,
         )
@@ -349,19 +362,6 @@ class ClaudeAgentService:
             },
         }
 
-    def _build_zai_servers(self, z_ai_api_key: str) -> dict[str, Any]:
-        return {
-            "zai-mcp-server": self._npx_server_config(
-                "@z_ai/mcp-server",
-                env={"Z_AI_API_KEY": z_ai_api_key, "Z_AI_MODE": "ZAI"},
-            ),
-            "web-search-prime": {
-                "type": "http",
-                "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
-                "headers": {"Authorization": f"Bearer {z_ai_api_key}"},
-            },
-        }
-
     def build_custom_mcps(self, custom_mcps: list[Any]) -> dict[str, Any]:
         servers = {}
         for mcp in custom_mcps:
@@ -387,21 +387,17 @@ class ClaudeAgentService:
         user: User,
         permission_mode: str,
         chat_id: str,
-        use_zai_mcp: bool,
     ) -> dict[str, Any]:
         user_settings = await UserService(
             session_factory=self.session_factory
         ).get_user_settings(user.id)
 
         sandbox_provider = user_settings.sandbox_provider
-        servers = {
+        servers: dict[str, Any] = {
             "permission": self._build_permission_server(
                 permission_mode, chat_id, sandbox_provider
             )
         }
-
-        if use_zai_mcp and user_settings.z_ai_api_key:
-            servers.update(self._build_zai_servers(user_settings.z_ai_api_key))
 
         if user_settings.custom_mcps:
             servers.update(self.build_custom_mcps(user_settings.custom_mcps))
@@ -471,7 +467,7 @@ class ClaudeAgentService:
         chat_id: str,
         is_custom_prompt: bool = False,
     ) -> ClaudeAgentOptions:
-        env, provider = await self._build_auth_env(model_id, user_settings)
+        env, provider_type = self._build_auth_env(model_id, user_settings)
 
         if user_settings.github_personal_access_token:
             env["GITHUB_TOKEN"] = user_settings.github_personal_access_token
@@ -485,15 +481,8 @@ class ClaudeAgentService:
             for env_var in user_settings.custom_env_vars:
                 env[env_var["key"]] = env_var["value"]
 
-        if provider == ModelProvider.OPENROUTER and user_settings.openrouter_api_key:
-            env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:3456"
-            env["ANTHROPIC_AUTH_TOKEN"] = "placeholder"
-            env["NO_PROXY"] = "127.0.0.1"
-            env["DISABLE_TELEMETRY"] = "true"
-            env["DISABLE_COST_WARNING"] = "true"
-
-        disallowed_tools = []
-        if provider != ModelProvider.ANTHROPIC:
+        disallowed_tools: list[str] = []
+        if provider_type != "anthropic":
             disallowed_tools.append("WebSearch")
 
         sdk_permission_mode: SDKPermissionMode = SDK_PERMISSION_MODE_MAP.get(
@@ -510,16 +499,21 @@ class ClaudeAgentService:
                 "append": system_prompt,
             }
 
+        # Extract actual model_id from composite format (provider_id:model_id)
+        provider_service = ProviderService()
+        _, actual_model_id = provider_service.get_provider_for_model(
+            user_settings, model_id
+        )
+
         options = ClaudeAgentOptions(
             system_prompt=system_prompt_config,
             permission_mode=sdk_permission_mode,
-            model=model_id,
+            model=actual_model_id,
             disallowed_tools=disallowed_tools,
             mcp_servers=await self._get_mcp_servers(
                 user,
                 permission_mode,
                 chat_id,
-                provider == ModelProvider.ZAI,
             ),
             cwd="/home/user",
             user="user",
@@ -576,12 +570,16 @@ class ClaudeAgentService:
         user_settings: UserSettings,
     ) -> int | None:
         try:
-            env, _ = await self._build_auth_env(model_id, user_settings)
+            env, _ = self._build_auth_env(model_id, user_settings)
+            provider_service = ProviderService()
+            _, actual_model_id = provider_service.get_provider_for_model(
+                user_settings, model_id
+            )
 
             options = ClaudeAgentOptions(
                 system_prompt="",
                 permission_mode="bypassPermissions",
-                model=model_id,
+                model=actual_model_id,
                 cwd="/home/user",
                 user="user",
                 resume=session_id,

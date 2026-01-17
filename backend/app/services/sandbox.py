@@ -15,6 +15,7 @@ from app.constants import PTY_OUTPUT_QUEUE_SIZE
 from app.models.types import (
     CustomAgentDict,
     CustomEnvVarDict,
+    CustomProviderDict,
     CustomSkillDict,
     CustomSlashCommandDict,
 )
@@ -561,7 +562,6 @@ class SandboxService:
         self,
         sandbox_id: str,
         github_token: str | None = None,
-        openrouter_api_key: str | None = None,
         custom_env_vars: list[CustomEnvVarDict] | None = None,
         custom_skills: list[CustomSkillDict] | None = None,
         custom_slash_commands: list[CustomSlashCommandDict] | None = None,
@@ -569,6 +569,7 @@ class SandboxService:
         user_id: str | None = None,
         auto_compact_disabled: bool = False,
         codex_auth_json: str | None = None,
+        custom_providers: list[CustomProviderDict] | None = None,
         is_fork: bool = False,
     ) -> None:
         tasks: list[Coroutine[None, None, None]] = [
@@ -603,6 +604,7 @@ class SandboxService:
             if codex_auth_json:
                 tasks.append(self._setup_codex_auth(sandbox_id, codex_auth_json))
 
+        openrouter_api_key = self._get_openrouter_api_key(custom_providers)
         if openrouter_api_key:
             tasks.append(
                 self._setup_anthropic_bridge(
@@ -613,6 +615,21 @@ class SandboxService:
         async with asyncio.TaskGroup() as tg:
             for task in tasks:
                 tg.create_task(task)
+
+    @staticmethod
+    def _get_openrouter_api_key(
+        custom_providers: list[CustomProviderDict] | None,
+    ) -> str | None:
+        if not custom_providers:
+            return None
+        for provider in custom_providers:
+            if (
+                provider.get("provider_type") == "openrouter"
+                and provider.get("enabled", True)
+                and provider.get("auth_token")
+            ):
+                return provider["auth_token"]
+        return None
 
     async def create_checkpoint(self, sandbox_id: str, message_id: str) -> str | None:
         self._validate_message_id(message_id)

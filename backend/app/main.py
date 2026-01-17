@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.docs import custom_openapi
 from app.api.endpoints import (
-    ai_models,
+    ai_model,
     auth,
     chat,
     sandbox,
@@ -30,7 +30,6 @@ from app.core.middleware import (
 from app.db.session import engine, celery_engine, SessionLocal
 from app.admin.config import create_admin
 from app.admin.views import (
-    AIModelAdmin,
     UserAdmin,
     ChatAdmin,
     MessageAdmin,
@@ -132,7 +131,7 @@ def create_application() -> FastAPI:
         tags=["Scheduling"],
     )
     application.include_router(
-        ai_models.router,
+        ai_model.router,
         prefix=f"{settings.API_V1_STR}/models",
         tags=["Models"],
     )
@@ -146,7 +145,6 @@ def create_application() -> FastAPI:
 
     admin = create_admin(application, engine, SessionLocal)
 
-    admin.add_view(AIModelAdmin)
     admin.add_view(UserAdmin)
     admin.add_view(ChatAdmin)
     admin.add_view(MessageAdmin)

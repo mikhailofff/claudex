@@ -35,8 +35,8 @@ os.environ.setdefault("MAIL_PASSWORD", "test_sendgrid_api_key")
 from app.api.endpoints import auth as auth_module
 from app.core.config import get_settings
 from app.core.deps import (
-    get_ai_model_service,
     get_chat_service,
+    get_provider_service,
     get_sandbox_service,
     get_user_service,
 )
@@ -46,9 +46,8 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import create_application
 from app.models.db_models import Chat, Message, User, UserSettings
-from app.models.db_models.ai_model import AIModel
-from app.models.db_models.enums import MessageRole, MessageStreamStatus, ModelProvider
-from app.services.ai_model import AIModelService
+from app.models.db_models.enums import MessageRole, MessageStreamStatus
+from app.services.provider import ProviderService
 from app.services.chat import ChatService
 from app.services.claude_agent import ClaudeAgentService
 from app.services.sandbox import SandboxService
@@ -74,12 +73,37 @@ async def make_auth_headers(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def get_default_test_providers(auth_token: str | None = None) -> list[dict]:
+    return [
+        {
+            "id": "anthropic",
+            "name": "Anthropic",
+            "provider_type": "anthropic",
+            "base_url": "https://api.anthropic.com",
+            "auth_token": auth_token or "test_anthropic_token",
+            "enabled": True,
+            "models": [
+                {
+                    "model_id": "claude-haiku-4-5",
+                    "name": "Claude Haiku 4.5",
+                    "enabled": True,
+                },
+                {
+                    "model_id": "claude-sonnet-4-5",
+                    "name": "Claude Sonnet 4.5",
+                    "enabled": True,
+                },
+            ],
+        }
+    ]
+
+
 async def make_user(
     db_session: AsyncSession,
     *,
     email_prefix: str = "test",
     with_settings: bool = True,
-    claude_token: str | None = None,
+    auth_token: str | None = None,
     commit: bool = False,
 ) -> User:
     unique_id = uuid.uuid4().hex[:8]
@@ -97,7 +121,7 @@ async def make_user(
         user_settings = UserSettings(
             id=uuid.uuid4(),
             user_id=user.id,
-            claude_code_oauth_token=claude_token,
+            custom_providers=get_default_test_providers(auth_token),
         )
         db_session.add(user_settings)
 
@@ -201,7 +225,7 @@ async def sample_user(db_session: AsyncSession) -> User:
     user_settings = UserSettings(
         id=uuid.uuid4(),
         user_id=user.id,
-        claude_code_oauth_token="test_claude_code_oauth_token",
+        custom_providers=get_default_test_providers(),
     )
     db_session.add(user_settings)
 
@@ -278,15 +302,15 @@ def create_e2e_application(
             session_factory=session_factory,
         )
 
-    def override_get_ai_model_service():
-        return AIModelService(session_factory=session_factory)
+    def override_get_provider_service():
+        return ProviderService()
 
     application.dependency_overrides[get_db] = override_get_db
     application.dependency_overrides[get_sandbox_service] = override_get_sandbox_service
     application.dependency_overrides[get_user_service] = override_get_user_service
     application.dependency_overrides[get_chat_service] = override_get_chat_service
-    application.dependency_overrides[get_ai_model_service] = (
-        override_get_ai_model_service
+    application.dependency_overrides[get_provider_service] = (
+        override_get_provider_service
     )
 
     auth_module.limiter.enabled = False
@@ -480,13 +504,12 @@ async def docker_sandbox(
 @pytest_asyncio.fixture
 async def docker_integration_user_fixture(
     db_session: AsyncSession,
-    seed_ai_models: None,
     claude_token: str,
 ) -> User:
     return await make_user(
         db_session,
         email_prefix="docker_integration",
-        claude_token=claude_token,
+        auth_token=claude_token,
         commit=True,
     )
 
@@ -567,31 +590,6 @@ def claude_token() -> str:
 
 
 @pytest_asyncio.fixture
-async def seed_ai_models(db_session: AsyncSession) -> None:
-    models = [
-        AIModel(
-            id=uuid.uuid4(),
-            model_id="claude-haiku-4-5",
-            name="Claude Haiku 4.5",
-            provider=ModelProvider.ANTHROPIC,
-            is_active=True,
-            sort_order=0,
-        ),
-        AIModel(
-            id=uuid.uuid4(),
-            model_id="claude-sonnet-4-5",
-            name="Claude Sonnet 4.5",
-            provider=ModelProvider.ANTHROPIC,
-            is_active=True,
-            sort_order=1,
-        ),
-    ]
-    for model in models:
-        db_session.add(model)
-    await db_session.flush()
-
-
-@pytest_asyncio.fixture
 async def integration_user_fixture(
     docker_integration_user_fixture: User,
 ) -> User:
@@ -620,7 +618,6 @@ async def sandbox_test_context(
     docker_available: bool,
     db_session: AsyncSession,
     session_factory: Callable[[], Any],
-    seed_ai_models: None,
 ) -> AsyncGenerator[SandboxTestContext, None]:
     if not docker_available:
         pytest.skip("Docker not available")
@@ -650,6 +647,7 @@ async def sandbox_test_context(
     user_settings = UserSettings(
         id=uuid.uuid4(),
         user_id=user.id,
+        custom_providers=get_default_test_providers(),
     )
     db_session.add(user_settings)
     await db_session.commit()
@@ -704,7 +702,6 @@ async def marketplace_client(marketplace_app) -> AsyncGenerator[AsyncClient, Non
 @pytest_asyncio.fixture
 async def marketplace_user(
     db_session: AsyncSession,
-    seed_ai_models: None,
 ) -> User:
     return await make_user(
         db_session,
