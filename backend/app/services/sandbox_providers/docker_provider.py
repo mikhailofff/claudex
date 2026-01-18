@@ -76,7 +76,10 @@ class LocalDockerProvider(SandboxProvider):
         if not self.config.sandbox_domain or not self.config.traefik_network:
             return {}
 
-        labels: dict[str, str] = {"traefik.enable": "true"}
+        labels: dict[str, str] = {
+            "traefik.enable": "true",
+            "traefik.docker.network": self.config.traefik_network,
+        }
         all_ports = list(DOCKER_AVAILABLE_PORTS)
 
         for port in all_ports:
