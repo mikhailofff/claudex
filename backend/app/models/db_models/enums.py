@@ -38,9 +38,3 @@ class TaskExecutionStatus(str, enum.Enum):
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
-
-
-class ModelProvider(str, enum.Enum):
-    ANTHROPIC = "anthropic"
-    ZAI = "zai"
-    OPENROUTER = "openrouter"

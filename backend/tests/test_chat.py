@@ -26,11 +26,10 @@ class TestCreateChat:
         async_client: AsyncClient,
         integration_user_fixture: User,
         auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         response = await async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Test Chat", "model_id": "claude-haiku-4-5"},
+            json={"title": "Test Chat", "model_id": "anthropic:claude-haiku-4-5"},
             headers=auth_headers,
         )
 
@@ -49,7 +48,7 @@ class TestCreateChat:
     ) -> None:
         response = await async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Test", "model_id": "claude-haiku-4-5"},
+            json={"title": "Test", "model_id": "anthropic:claude-haiku-4-5"},
         )
 
         assert response.status_code == 401
@@ -210,18 +209,17 @@ class TestPinChat:
         async_client: AsyncClient,
         integration_user_fixture: User,
         auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         chat1_response = await async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Chat 1", "model_id": "claude-haiku-4-5"},
+            json={"title": "Chat 1", "model_id": "anthropic:claude-haiku-4-5"},
             headers=auth_headers,
         )
         chat1_id = chat1_response.json()["id"]
 
         await async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Chat 2", "model_id": "claude-haiku-4-5"},
+            json={"title": "Chat 2", "model_id": "anthropic:claude-haiku-4-5"},
             headers=auth_headers,
         )
 
@@ -268,11 +266,10 @@ class TestDeleteChat:
         async_client: AsyncClient,
         integration_user_fixture: User,
         auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         create_response = await async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Chat to Delete", "model_id": "claude-haiku-4-5"},
+            json={"title": "Chat to Delete", "model_id": "anthropic:claude-haiku-4-5"},
             headers=auth_headers,
         )
         chat_id = create_response.json()["id"]
@@ -297,16 +294,15 @@ class TestDeleteAllChats:
         async_client: AsyncClient,
         integration_user_fixture: User,
         auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         await async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Chat 1", "model_id": "claude-haiku-4-5"},
+            json={"title": "Chat 1", "model_id": "anthropic:claude-haiku-4-5"},
             headers=auth_headers,
         )
         await async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Chat 2", "model_id": "claude-haiku-4-5"},
+            json={"title": "Chat 2", "model_id": "anthropic:claude-haiku-4-5"},
             headers=auth_headers,
         )
 
@@ -386,7 +382,7 @@ class TestChatCompletion:
             data={
                 "prompt": test_prompt,
                 "chat_id": str(chat.id),
-                "model_id": "claude-haiku-4-5",
+                "model_id": "anthropic:claude-haiku-4-5",
                 "permission_mode": "auto",
             },
             headers=auth_headers,
@@ -470,7 +466,7 @@ class TestChatCompletion:
             data={
                 "prompt": test_prompt,
                 "chat_id": str(chat.id),
-                "model_id": "claude-haiku-4-5",
+                "model_id": "anthropic:claude-haiku-4-5",
                 "permission_mode": "auto",
             },
             headers=auth_headers,
@@ -504,7 +500,7 @@ class TestChatCompletion:
             "/api/v1/chat/chat",
             data={
                 "prompt": "Hello",
-                "model_id": "claude-haiku-4-5",
+                "model_id": "anthropic:claude-haiku-4-5",
             },
             headers=auth_headers,
         )
@@ -523,7 +519,7 @@ class TestChatCompletion:
             data={
                 "prompt": "Hello",
                 "chat_id": str(chat.id),
-                "model_id": "claude-haiku-4-5",
+                "model_id": "anthropic:claude-haiku-4-5",
             },
         )
 
@@ -542,7 +538,7 @@ class TestEnhancePrompt:
             "/api/v1/chat/enhance-prompt",
             data={
                 "prompt": "make a website",
-                "model_id": "claude-haiku-4-5",
+                "model_id": "anthropic:claude-haiku-4-5",
             },
             headers=auth_headers,
         )
@@ -561,7 +557,7 @@ class TestEnhancePrompt:
             "/api/v1/chat/enhance-prompt",
             data={
                 "prompt": "",
-                "model_id": "claude-haiku-4-5",
+                "model_id": "anthropic:claude-haiku-4-5",
             },
             headers=auth_headers,
         )
@@ -642,7 +638,7 @@ class TestChatUnauthorized:
     ) -> None:
         response = await streaming_client.post(
             "/api/v1/chat/enhance-prompt",
-            data={"prompt": "test", "model_id": "claude-haiku-4-5"},
+            data={"prompt": "test", "model_id": "anthropic:claude-haiku-4-5"},
         )
 
         assert response.status_code == 401
@@ -703,7 +699,7 @@ class TestChatNotFound:
             data={
                 "prompt": "Hello",
                 "chat_id": fake_id,
-                "model_id": "claude-haiku-4-5",
+                "model_id": "anthropic:claude-haiku-4-5",
             },
             headers=auth_headers,
         )
@@ -733,7 +729,7 @@ class TestForkChat:
             content="First user message",
             role=MessageRole.USER,
             stream_status=MessageStreamStatus.COMPLETED,
-            model_id="claude-haiku-4-5",
+            model_id="anthropic:claude-haiku-4-5",
         )
         messages = [
             msg_with_attachment,
@@ -743,7 +739,7 @@ class TestForkChat:
                 content="Assistant response",
                 role=MessageRole.ASSISTANT,
                 stream_status=MessageStreamStatus.COMPLETED,
-                model_id="claude-haiku-4-5",
+                model_id="anthropic:claude-haiku-4-5",
                 total_cost_usd=0.001,
             ),
             Message(
@@ -811,7 +807,7 @@ class TestForkChat:
         assert "Message after fork point - should be excluded" not in contents
 
         assistant_msg = next(m for m in copied_messages if m["role"] == "assistant")
-        assert assistant_msg["model_id"] == "claude-haiku-4-5"
+        assert assistant_msg["model_id"] == "anthropic:claude-haiku-4-5"
 
         first_msg = next(
             m for m in copied_messages if m["content"] == "First user message"
@@ -960,7 +956,6 @@ class TestChatCreationSandboxState:
         docker_async_client: AsyncClient,
         docker_integration_chat_fixture: tuple[User, Chat, SandboxService],
         docker_auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         _, _, sandbox_service = docker_integration_chat_fixture
 
@@ -972,7 +967,10 @@ class TestChatCreationSandboxState:
 
         response = await docker_async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Auto Compact Test Chat", "model_id": "claude-haiku-4-5"},
+            json={
+                "title": "Auto Compact Test Chat",
+                "model_id": "anthropic:claude-haiku-4-5",
+            },
             headers=docker_auth_headers,
         )
         assert response.status_code == 201
@@ -991,7 +989,6 @@ class TestChatCreationSandboxState:
         docker_async_client: AsyncClient,
         docker_integration_chat_fixture: tuple[User, Chat, SandboxService],
         docker_auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         _, _, sandbox_service = docker_integration_chat_fixture
 
@@ -1019,7 +1016,7 @@ You are a chat test agent."""
 
         response = await docker_async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Agent Test Chat", "model_id": "claude-haiku-4-5"},
+            json={"title": "Agent Test Chat", "model_id": "anthropic:claude-haiku-4-5"},
             headers=docker_auth_headers,
         )
         assert response.status_code == 201
@@ -1039,7 +1036,6 @@ You are a chat test agent."""
         docker_async_client: AsyncClient,
         docker_integration_chat_fixture: tuple[User, Chat, SandboxService],
         docker_auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         _, _, sandbox_service = docker_integration_chat_fixture
 
@@ -1055,7 +1051,10 @@ You are a chat test agent."""
 
         response = await docker_async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Env Vars Test Chat", "model_id": "claude-haiku-4-5"},
+            json={
+                "title": "Env Vars Test Chat",
+                "model_id": "anthropic:claude-haiku-4-5",
+            },
             headers=docker_auth_headers,
         )
         assert response.status_code == 201
@@ -1073,7 +1072,6 @@ You are a chat test agent."""
         docker_async_client: AsyncClient,
         docker_integration_chat_fixture: tuple[User, Chat, SandboxService],
         docker_auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         _, _, sandbox_service = docker_integration_chat_fixture
 
@@ -1104,7 +1102,7 @@ This is a test skill for chat creation."""
 
         response = await docker_async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Skill Test Chat", "model_id": "claude-haiku-4-5"},
+            json={"title": "Skill Test Chat", "model_id": "anthropic:claude-haiku-4-5"},
             headers=docker_auth_headers,
         )
         assert response.status_code == 201
@@ -1124,7 +1122,6 @@ This is a test skill for chat creation."""
         docker_async_client: AsyncClient,
         docker_integration_chat_fixture: tuple[User, Chat, SandboxService],
         docker_auth_headers: dict[str, str],
-        seed_ai_models: None,
     ) -> None:
         _, _, sandbox_service = docker_integration_chat_fixture
 
@@ -1157,7 +1154,10 @@ Execute the chat test command."""
 
         response = await docker_async_client.post(
             "/api/v1/chat/chats",
-            json={"title": "Command Test Chat", "model_id": "claude-haiku-4-5"},
+            json={
+                "title": "Command Test Chat",
+                "model_id": "anthropic:claude-haiku-4-5",
+            },
             headers=docker_auth_headers,
         )
         assert response.status_code == 201

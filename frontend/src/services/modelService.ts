@@ -1,11 +1,10 @@
 import { apiClient } from '@/lib/api';
-import { buildQueryString, withAuth } from '@/services/base';
+import { withAuth } from '@/services/base';
 import type { Model } from '@/types';
 
-async function getModels(activeOnly: boolean = true): Promise<Model[]> {
+async function getModels(): Promise<Model[]> {
   return withAuth(async () => {
-    const queryString = buildQueryString({ active_only: activeOnly });
-    const response = await apiClient.get<Model[]>(`/models/${queryString}`);
+    const response = await apiClient.get<Model[]>('/models/');
     return response ?? [];
   });
 }

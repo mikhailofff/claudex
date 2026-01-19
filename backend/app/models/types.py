@@ -144,3 +144,19 @@ class InstalledPluginDict(TypedDict, total=False):
     version: str | None
     installed_at: str
     components: list[str]
+
+
+class CustomProviderModelDict(TypedDict, total=False):
+    model_id: str
+    name: str
+    enabled: bool
+
+
+class CustomProviderDict(TypedDict, total=False):
+    id: str
+    name: str
+    provider_type: Literal["anthropic", "openrouter", "custom"]
+    base_url: str | None
+    auth_token: str | None
+    enabled: bool
+    models: list[CustomProviderModelDict]

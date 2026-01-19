@@ -10,8 +10,8 @@ from app.core.user_manager import optional_current_active_user
 from app.db.session import SessionLocal, get_db
 from app.models.db_models import Chat, User
 from app.services.agent import AgentService
-from app.services.ai_model import AIModelService
 from app.services.chat import ChatService
+from app.services.provider import ProviderService
 from app.services.claude_agent import ClaudeAgentService
 from app.services.command import CommandService
 from app.services.exceptions import UserException
@@ -31,8 +31,8 @@ from app.services.storage import StorageService
 from app.services.user import UserService
 
 
-def get_ai_model_service() -> AIModelService:
-    return AIModelService(session_factory=SessionLocal)
+def get_provider_service() -> ProviderService:
+    return ProviderService()
 
 
 def get_message_service() -> MessageService:

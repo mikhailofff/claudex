@@ -6,19 +6,16 @@ import type { Model } from '@/types';
 import { useModelStore } from '@/store';
 import { queryKeys } from './queryKeys';
 
-export const useModelsQuery = (
-  activeOnly: boolean = true,
-  options?: Partial<UseQueryOptions<Model[]>>,
-) => {
+export const useModelsQuery = (options?: Partial<UseQueryOptions<Model[]>>) => {
   return useQuery({
-    queryKey: [queryKeys.models, activeOnly],
-    queryFn: () => modelService.getModels(activeOnly),
+    queryKey: [queryKeys.models],
+    queryFn: () => modelService.getModels(),
     ...options,
   });
 };
 
 export const useModelSelection = (options?: { enabled?: boolean }) => {
-  const { data: models = [], isLoading } = useModelsQuery(true, {
+  const { data: models = [], isLoading } = useModelsQuery({
     enabled: options?.enabled,
   });
   const selectedModelId = useModelStore((state) => state.selectedModelId);

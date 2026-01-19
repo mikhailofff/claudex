@@ -98,39 +98,6 @@ export const getGeneralSecretFields = (): GeneralSecretFieldConfig[] => [
     },
   },
   {
-    key: 'claude_code_oauth_token',
-    label: 'Claude Code OAuth Token',
-    description: 'Authentication token for Claude Code integration',
-    placeholder: 'Enter your Claude Code oauth token',
-    helperText: {
-      prefix: 'Run',
-      code: 'claude setup-token',
-      suffix: 'in your terminal to generate a token',
-    },
-  },
-  {
-    key: 'z_ai_api_key',
-    label: 'Z.AI API Key',
-    description: 'API key for Z.AI services',
-    placeholder: 'Enter your Z.AI API key',
-    helperText: {
-      prefix: 'Learn how to get your API key at',
-      anchorText: 'Z.AI Docs',
-      href: 'https://docs.z.ai/devpack/tool/claude',
-    },
-  },
-  {
-    key: 'openrouter_api_key',
-    label: 'OpenRouter API Key',
-    description: 'API key for accessing OpenRouter models',
-    placeholder: 'sk-or-v1-xxxxxxxxxxxxxxxxxxxx',
-    helperText: {
-      prefix: 'Get your API key from',
-      anchorText: 'OpenRouter Dashboard',
-      href: 'https://openrouter.ai/keys',
-    },
-  },
-  {
     key: 'e2b_api_key',
     label: 'E2B API Key',
     description: 'API key for E2B cloud sandbox provider',

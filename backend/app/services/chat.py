@@ -17,7 +17,6 @@ from app.models.db_models import (
     MessageAttachment,
     MessageRole,
     MessageStreamStatus,
-    ModelProvider,
     User,
     UserSettings,
 )
@@ -28,11 +27,12 @@ from app.models.schemas import (
     CursorPaginatedMessages,
     PaginatedChats,
     PaginationParams,
+    ProviderType,
 )
 from app.models.types import ChatCompletionResult, MessageAttachmentDict
 from app.prompts.system_prompt import build_system_prompt_for_chat
-from app.services.ai_model import AIModelService
 from app.services.base import BaseDbService, SessionFactoryType
+from app.services.provider import ProviderService
 from app.services.claude_agent import ClaudeAgentService
 from app.services.exceptions import ChatException, ErrorCode
 from app.services.message import MessageService
@@ -70,6 +70,7 @@ class ChatService(BaseDbService[Chat]):
         self.storage_service = storage_service
         self.user_service = user_service
         self.message_service = MessageService(session_factory=self._session_factory)
+        self._provider_service = ProviderService()
 
     @property
     def session_factory(self) -> SessionFactoryType:
@@ -119,23 +120,22 @@ class ChatService(BaseDbService[Chat]):
         user_settings = cast(
             UserSettings, await self.user_service.get_user_settings(user.id)
         )
-        await self._validate_api_keys(user_settings, chat_data.model_id)
+        self._validate_api_keys(user_settings, chat_data.model_id)
 
         sandbox_id = await self.sandbox_service.create_sandbox()
 
         github_token = user_settings.github_personal_access_token
-        openrouter_api_key = user_settings.openrouter_api_key
         custom_env_vars = user_settings.custom_env_vars
         custom_skills = user_settings.custom_skills
         custom_slash_commands = user_settings.custom_slash_commands
         custom_agents = user_settings.custom_agents
         auto_compact_disabled = user_settings.auto_compact_disabled
         codex_auth_json = user_settings.codex_auth_json
+        custom_providers = user_settings.custom_providers
 
         await self.sandbox_service.initialize_sandbox(
             sandbox_id=sandbox_id,
             github_token=github_token,
-            openrouter_api_key=openrouter_api_key,
             custom_env_vars=custom_env_vars,
             custom_skills=custom_skills,
             custom_slash_commands=custom_slash_commands,
@@ -143,6 +143,7 @@ class ChatService(BaseDbService[Chat]):
             user_id=str(user.id),
             auto_compact_disabled=auto_compact_disabled,
             codex_auth_json=codex_auth_json,
+            custom_providers=custom_providers,
         )
 
         async with self.session_factory() as db:
@@ -378,7 +379,7 @@ class ChatService(BaseDbService[Chat]):
         await self._check_message_limit(current_user.id)
 
         user_settings = await self.user_service.get_user_settings(current_user.id)
-        await self._validate_api_keys(user_settings, request.model_id)
+        self._validate_api_keys(user_settings, request.model_id)
 
         chat = await self.get_chat(request.chat_id, current_user)
 
@@ -421,7 +422,9 @@ class ChatService(BaseDbService[Chat]):
         # We strip these invalid thinking blocks while preserving the rest of the conversation context.
         session_id = chat.session_id
         if session_id and chat.sandbox_id:
-            if await self._needs_session_cleaning(chat.id, request.model_id):
+            if await self._needs_session_cleaning(
+                chat.id, request.model_id, current_user.id
+            ):
                 await self.sandbox_service.clean_session_thinking_blocks(
                     chat.sandbox_id, session_id
                 )
@@ -569,7 +572,7 @@ class ChatService(BaseDbService[Chat]):
             try:
                 await fork_sandbox_service.initialize_sandbox(
                     sandbox_id=new_sandbox_id,
-                    openrouter_api_key=user_settings.openrouter_api_key,
+                    custom_providers=user_settings.custom_providers,
                     is_fork=True,
                 )
 
@@ -664,11 +667,9 @@ class ChatService(BaseDbService[Chat]):
                 status_code=429,
             )
 
-    async def _validate_api_keys(
-        self, user_settings: UserSettings, model_id: str
-    ) -> None:
+    def _validate_api_keys(self, user_settings: UserSettings, model_id: str) -> None:
         try:
-            await validate_model_api_keys(user_settings, model_id, self.session_factory)
+            validate_model_api_keys(user_settings, model_id)
         except APIKeyValidationError as e:
             raise ChatException(
                 str(e), error_code=ErrorCode.API_KEY_MISSING, status_code=400
@@ -737,24 +738,38 @@ class ChatService(BaseDbService[Chat]):
         except Exception as e:
             logger.warning("Failed to resume sandbox for chat %s: %s", chat_id, e)
 
-    async def _needs_session_cleaning(self, chat_id: UUID, new_model_id: str) -> bool:
-        ai_model_service = AIModelService(session_factory=self._session_factory)
+    async def _needs_session_cleaning(
+        self, chat_id: UUID, new_model_id: str, user_id: UUID
+    ) -> bool:
+        user_settings = await self.user_service.get_user_settings(user_id)
+        if not user_settings:
+            return False
 
-        new_provider = await ai_model_service.get_model_provider(new_model_id)
-        if new_provider != ModelProvider.ANTHROPIC:
+        new_provider, _ = self._provider_service.get_provider_for_model(
+            user_settings, new_model_id
+        )
+        new_provider_type = new_provider.get("provider_type") if new_provider else None
+
+        if new_provider_type != "anthropic":
             return False
 
         last_message = await self.message_service.get_latest_assistant_message(chat_id)
         if not last_message or not last_message.model_id:
             return False
 
-        prev_provider = await ai_model_service.get_model_provider(last_message.model_id)
-        if prev_provider in [ModelProvider.OPENROUTER, ModelProvider.ZAI]:
+        prev_provider, _ = self._provider_service.get_provider_for_model(
+            user_settings, last_message.model_id
+        )
+        prev_provider_type = (
+            prev_provider.get("provider_type") if prev_provider else None
+        )
+
+        if prev_provider_type != ProviderType.ANTHROPIC.value:
             logger.info(
                 "Session cleaning needed for chat %s: switching from %s to %s",
                 chat_id,
-                prev_provider,
-                new_provider,
+                prev_provider_type,
+                new_provider_type,
             )
             return True
 

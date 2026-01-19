@@ -3,35 +3,23 @@ import { Bot, ChevronDown } from 'lucide-react';
 import { Dropdown } from '@/components/ui';
 import type { DropdownItemType } from '@/components/ui';
 import { useAuthStore } from '@/store';
-import { useSettingsQuery, useModelSelection } from '@/hooks/queries';
-import type { UserSettings } from '@/types/user.types';
-import type { Model, ModelProvider } from '@/types/chat.types';
-
-const PROVIDER_KEY_MAP: Record<ModelProvider, keyof UserSettings> = {
-  anthropic: 'claude_code_oauth_token',
-  zai: 'z_ai_api_key',
-  openrouter: 'openrouter_api_key',
-};
-
-const PROVIDER_DISPLAY_NAMES: Record<ModelProvider, string> = {
-  anthropic: 'Anthropic',
-  zai: 'Z.ai',
-  openrouter: 'OpenRouter',
-};
+import { useModelSelection } from '@/hooks/queries';
+import type { Model } from '@/types/chat.types';
 
 const groupModelsByProvider = (models: Model[]) => {
-  const groups = new Map<ModelProvider, Model[]>();
+  const groups = new Map<string, { name: string; models: Model[] }>();
 
   models.forEach((model) => {
-    if (!groups.has(model.provider)) {
-      groups.set(model.provider, []);
+    const key = model.provider_id;
+    if (!groups.has(key)) {
+      groups.set(key, { name: model.provider_name, models: [] });
     }
-    groups.get(model.provider)!.push(model);
+    groups.get(key)!.models.push(model);
   });
 
-  return Array.from(groups.entries()).map(([provider, items]) => ({
-    label: PROVIDER_DISPLAY_NAMES[provider] || provider,
-    items,
+  return Array.from(groups.values()).map((group) => ({
+    label: group.name,
+    items: group.models,
   }));
 };
 
@@ -51,23 +39,8 @@ export const ModelSelector = memo(function ModelSelector({
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const { models, isLoading } = useModelSelection({ enabled: isAuthenticated });
 
-  const { data: settings } = useSettingsQuery({
-    enabled: isAuthenticated,
-  });
-
-  const availableModels = useMemo(() => {
-    if (!settings) return models;
-
-    const filtered = models.filter((model) => {
-      const keyField = PROVIDER_KEY_MAP[model.provider];
-      return keyField && settings[keyField];
-    });
-
-    return filtered.length > 0 ? filtered : models;
-  }, [models, settings]);
-
   const groupedItems = useMemo(() => {
-    const groups = groupModelsByProvider(availableModels);
+    const groups = groupModelsByProvider(models);
     const items: DropdownItemType<Model>[] = [];
 
     groups.forEach((group) => {
@@ -78,17 +51,17 @@ export const ModelSelector = memo(function ModelSelector({
     });
 
     return items;
-  }, [availableModels]);
+  }, [models]);
 
-  const selectedModel = availableModels.find((m) => m.model_id === selectedModelId);
+  const selectedModel = models.find((m) => m.model_id === selectedModelId);
 
   useEffect(() => {
-    if (availableModels.length > 0 && !selectedModel) {
-      onModelChange(availableModels[0].model_id);
+    if (models.length > 0 && !selectedModel) {
+      onModelChange(models[0].model_id);
     }
-  }, [availableModels, selectedModel, onModelChange]);
+  }, [models, selectedModel, onModelChange]);
 
-  if (isLoading || models.length === 0) {
+  if (isLoading) {
     return (
       <div className="flex items-center gap-1 rounded-lg border border-border/70 bg-surface-tertiary px-2 py-1 shadow-sm dark:border-white/10 dark:bg-surface-dark-tertiary">
         <Bot className="h-3.5 w-3.5 text-text-quaternary" />
@@ -98,15 +71,25 @@ export const ModelSelector = memo(function ModelSelector({
     );
   }
 
+  if (models.length === 0) {
+    return (
+      <div className="flex items-center gap-1 rounded-lg border border-border/70 bg-surface-tertiary px-2 py-1 shadow-sm dark:border-white/10 dark:bg-surface-dark-tertiary">
+        <Bot className="h-3.5 w-3.5 text-text-quaternary" />
+        <span className="hidden text-xs text-text-quaternary sm:block">No models</span>
+        <ChevronDown className="hidden h-3.5 w-3.5 text-text-quaternary sm:block" />
+      </div>
+    );
+  }
+
   return (
     <Dropdown
-      value={selectedModel || availableModels[0]}
+      value={selectedModel || models[0]}
       items={groupedItems}
       getItemKey={(model) => model.model_id}
-      getItemLabel={(model) => model.name}
+      getItemLabel={(model) => `${model.provider_name} - ${model.name}`}
       onSelect={(model) => onModelChange(model.model_id)}
       leftIcon={Bot}
-      width="w-48"
+      width="w-64"
       dropdownPosition={dropdownPosition}
       disabled={disabled}
       compactOnMobile
@@ -116,7 +99,7 @@ export const ModelSelector = memo(function ModelSelector({
         <span
           className={`truncate text-xs font-medium text-text-primary ${isSelected ? 'dark:text-text-dark-primary' : 'dark:text-text-dark-secondary'}`}
         >
-          {model.name}
+          {model.provider_name} - {model.name}
         </span>
       )}
     />
