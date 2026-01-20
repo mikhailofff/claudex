@@ -55,7 +55,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 
 
 @asynccontextmanager
-async def get_celery_session() -> AsyncIterator[
-    tuple[async_sessionmaker[AsyncSession], AsyncEngine]
-]:
+async def get_celery_session() -> (
+    AsyncIterator[tuple[async_sessionmaker[AsyncSession], AsyncEngine]]
+):
     yield CelerySessionLocal, celery_engine
